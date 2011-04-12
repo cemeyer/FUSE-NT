@@ -1,0 +1,97 @@
+AC_INIT(fuse, 2.8.5)
+AC_CONFIG_MACRO_DIR([m4])
+AC_CANONICAL_TARGET
+AM_INIT_AUTOMAKE
+AM_CONFIG_HEADER(include/config.h)
+
+AC_PROG_LIBTOOL
+AC_PROG_CC
+AM_PROG_CC_C_O
+
+# compatibility for automake < 1.8
+if test -z "$mkdir_p"; then
+	mkdir_p="../mkinstalldirs"
+	AC_SUBST(mkdir_p)
+fi
+
+case $target_os in
+     *linux*)	arch=linux;;
+     *bsd*)	arch=bsd;;
+     *)		arch=unknown;;
+esac
+
+if test "$ac_env_CFLAGS_set" != set; then
+	CFLAGS="-Wall -W -Wno-sign-compare -Wstrict-prototypes -Wmissing-declarations -Wwrite-strings -g -O2 -fno-strict-aliasing"
+fi
+
+AC_ARG_ENABLE(lib,
+	[  --enable-lib            Compile with library ])
+AC_ARG_ENABLE(util,
+	[  --enable-util           Compile with util ])
+AC_ARG_ENABLE(example,
+	[  --enable-example        Compile with examples ])
+AC_ARG_ENABLE(mtab,
+	[  --disable-mtab          Disable and ignore usage of /etc/mtab ])
+
+AC_ARG_WITH(pkgconfigdir,
+            [  --with-pkgconfigdir=DIR      pkgconfig file in DIR @<:@LIBDIR/pkgconfig@:>@],
+            [pkgconfigdir=$withval],
+            [pkgconfigdir='${libdir}/pkgconfig'])
+AC_SUBST(pkgconfigdir)
+
+subdirs2="include"
+
+if test "$enable_lib" != "no"; then
+	subdirs2="$subdirs2 lib";
+fi
+if test "$arch" = linux -a "$enable_util" != "no"; then
+	subdirs2="$subdirs2 util";
+fi
+if test "$enable_example" != "no"; then
+	subdirs2="$subdirs2 example";
+fi
+if test "$enable_mtab" = "no"; then
+	AC_DEFINE(IGNORE_MTAB, 1, [Don't update /etc/mtab])
+fi
+AC_CHECK_FUNCS([fork setxattr fdatasync])
+AC_CHECK_MEMBERS([struct stat.st_atim])
+AC_CHECK_MEMBERS([struct stat.st_atimespec])
+
+libfuse_libs="-pthread"
+LIBS=
+AC_SEARCH_LIBS(dlopen, [dl])
+AC_SEARCH_LIBS(clock_gettime, [rt])
+libfuse_libs="$libfuse_libs $LIBS"
+LIBS=
+AC_ARG_WITH([libiconv-prefix],
+[  --with-libiconv-prefix=DIR  search for libiconv in DIR/include and DIR/lib], [
+    for dir in `echo "$withval" | tr : ' '`; do
+      if test -d $dir/include; then CPPFLAGS="$CPPFLAGS -I$dir/include"; fi
+      if test -d $dir/lib; then LDFLAGS="$LDFLAGS -L$dir/lib"; fi
+    done
+   ])
+AM_ICONV
+libfuse_libs="$libfuse_libs $LIBICONV"
+AM_CONDITIONAL(ICONV, test "$am_cv_func_iconv" = yes)
+AC_SUBST(libfuse_libs)
+
+if test -z "$MOUNT_FUSE_PATH"; then
+	MOUNT_FUSE_PATH=/sbin
+fi
+AC_SUBST(MOUNT_FUSE_PATH)
+if test -z "$UDEV_RULES_PATH"; then
+	UDEV_RULES_PATH=/etc/udev/rules.d
+fi
+AC_SUBST(UDEV_RULES_PATH)
+if test -z "$INIT_D_PATH"; then
+	INIT_D_PATH=/etc/init.d
+fi
+AC_SUBST(INIT_D_PATH)
+
+AC_SUBST(subdirs2)
+
+AM_CONDITIONAL(LINUX, test "$arch" = linux)
+AM_CONDITIONAL(BSD, test "$arch" = bsd)
+
+AC_CONFIG_FILES([fuse.pc Makefile lib/Makefile util/Makefile example/Makefile include/Makefile])
+AC_OUTPUT
