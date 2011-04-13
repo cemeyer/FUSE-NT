@@ -11,6 +11,7 @@
 #include "fuse_misc.h"
 #include "fuse_opt.h"
 #include "fuse_common_compat.h"
+#include "fuse_fs_defines.h"
 #include "mount_util.h"
 
 #include <stdio.h>
@@ -267,6 +268,8 @@ static int receive_fd(int fd)
 
 void fuse_kern_unmount(const char *mountpoint, int fd)
 {
+	printf("fuse_kern_unmount\n");
+	/*
 	int res;
 	int pid;
 
@@ -279,13 +282,13 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 		pfd.fd = fd;
 		pfd.events = 0;
 		res = poll(&pfd, 1, 0);
-		/* If file poll returns POLLERR on the device file descriptor,
-		   then the filesystem is already unmounted */
+		// If file poll returns POLLERR on the device file descriptor,
+		// then the filesystem is already unmounted
 		if (res == 1 && (pfd.revents & POLLERR))
 			return;
 
-		/* Need to close file descriptor, otherwise synchronous umount
-		   would recurse into filesystem, and deadlock */
+		// Need to close file descriptor, otherwise synchronous umount
+		// would recurse into filesystem, and deadlock
 		close(fd);
 	}
 
@@ -310,6 +313,7 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 		_exit(1);
 	}
 	waitpid(pid, NULL, 0);
+	*/
 }
 
 void fuse_unmount_compat22(const char *mountpoint)
@@ -388,6 +392,8 @@ int fuse_mount_compat22(const char *mountpoint, const char *opts)
 static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			  const char *mnt_opts)
 {
+	printf("fuse_mount_sys\n");
+	/*
 	char tmp[128];
 	const char *devname = "/dev/fuse";
 	char *source = NULL;
@@ -452,7 +458,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 
 	res = mount(source, mnt, type, mo->flags, mo->kernel_opts);
 	if (res == -1 && errno == ENODEV && mo->subtype) {
-		/* Probably missing subtype support */
+		// Probably missing subtype support
 		strcpy(type, mo->blkdev ? "fuseblk" : "fuse");
 		if (mo->fsname) {
 			if (!mo->blkdev)
@@ -464,10 +470,8 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 		res = mount(source, mnt, type, mo->flags, mo->kernel_opts);
 	}
 	if (res == -1) {
-		/*
-		 * Maybe kernel doesn't support unprivileged mounts, in this
-		 * case try falling back to fusermount
-		 */
+		 // Maybe kernel doesn't support unprivileged mounts, in this
+		 // case try falling back to fusermount
 		if (errno == EPERM) {
 			res = -2;
 		} else {
@@ -502,12 +506,14 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 	return fd;
 
 out_umount:
-	umount2(mnt, 2); /* lazy umount */
+	umount2(mnt, 2); // lazy umount
 out_close:
 	free(type);
 	free(source);
 	close(fd);
 	return res;
+	*/
+	return 0;
 }
 
 static int get_mnt_flag_opts(char **mnt_optsp, int flags)
@@ -590,5 +596,3 @@ out:
 	return res;
 }
 
-FUSE_SYMVER(".symver fuse_mount_compat22,fuse_mount@FUSE_2.2");
-FUSE_SYMVER(".symver fuse_unmount_compat22,fuse_unmount@FUSE_2.2");
