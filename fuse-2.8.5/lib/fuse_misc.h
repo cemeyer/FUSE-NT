@@ -9,8 +9,8 @@
 #include "config.h"
 #include <pthread.h>
 
-/* Versioned symbols confuse the dynamic linker in uClibc */
-#if __UCLIBC__ || _WIN32
+/* Versioned symbols confuse the dynamic linker in uClibc and cygwin */
+#if defined(__UCLIBC__) || defined(__CYGWIN__)
 #define FUSE_SYMVER(x)
 #else
 #define FUSE_SYMVER(x) __asm__(x)
