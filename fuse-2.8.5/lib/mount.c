@@ -393,7 +393,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			  const char *mnt_opts)
 {
 	printf("fuse_mount_sys\n");
-	/*
+	
 	char tmp[128];
 	const char *devname = "/dev/fuse";
 	char *source = NULL;
@@ -506,14 +506,12 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 	return fd;
 
 out_umount:
-	umount2(mnt, 2); // lazy umount
+	// umount2(mnt, 2); // lazy umount
 out_close:
 	free(type);
 	free(source);
 	close(fd);
 	return res;
-	*/
-	return 0;
 }
 
 static int get_mnt_flag_opts(char **mnt_optsp, int flags)

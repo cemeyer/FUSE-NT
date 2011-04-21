@@ -67,6 +67,10 @@
 #define __u32 uint32_t
 #define __s32 int32_t
 
+#ifdef __CYGWIN__
+#include <Windows.h>
+#endif
+
 /*
  * Version negotiation:
  *
@@ -589,5 +593,14 @@ struct fuse_notify_inval_entry_out {
 	__u32	namelen;
 	__u32	padding;
 };
+
+#ifdef __CYGWIN__
+typedef struct _FUSE_REQUEST {
+    UINT MountPointLength;
+    UINT MountOptionsLength;
+    WCHAR MountPoint[256];
+    UINT MountOptions; // OR options together
+} FUSE_REQUEST;
+#endif /* __CYGWIN__ */
 
 #endif /* _LINUX_FUSE_H */
