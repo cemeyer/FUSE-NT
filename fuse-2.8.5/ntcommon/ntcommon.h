@@ -17,8 +17,8 @@ typedef struct FUSENT_CREATE_REQ {
   PFILE_OBJECT fop;
   IRP irp;
   uint32_t fnamelen; // in bytes
-  uint8_t rem[0]; // fnamelen bytes of UTF-16LE file name,
-                  // followed by the irp stack
+  uint8_t rem[0]; // irp stack, followed by fnamelen
+                  // bytes of UTF-16LE file name
 };
 
 typedef struct FUSENT_WRITE_REQ {
@@ -26,8 +26,7 @@ typedef struct FUSENT_WRITE_REQ {
   PFILE_OBJECT fop;
   IRP irp;
   uint32_t buflen;
-  uint8_t rem[0]; // buflen bytes of write data, followed by
-                  // the irp stack
+  uint8_t rem[0]; // irp stack, followed by buflen bytes of write data
 };
 
 // Responses (Userspace to Kernelspace)
@@ -37,6 +36,8 @@ typedef struct FUSENT_MOUNT { // weird special-case "response"
   uint32_t mtoptslen; // in bytes
   uint8_t rem[0]; // mtptlen bytes of UTF-16LE mount path,
                   // followed by mtoptslen bytes of mount options
+                  // (mtptlen should be word-sized and nul-padded to make
+                  // mtopts aligned)
 };
 
 typedef struct FUSENT_GENERIC_RESP {
