@@ -1,3 +1,5 @@
+#ifdef __CYGWIN__
+
 // Decodes an IRP (and associated IO stack) to locate the current stack entry
 // and the IRP major number.
 //
@@ -11,3 +13,5 @@ int fusent_decode_irp(IRP *irp, IO_STACK_LOCATION *iosp, uint8_t *outirptype,
 
 	return 0;
 }
+
+#endif /* __CYGWIN__ */

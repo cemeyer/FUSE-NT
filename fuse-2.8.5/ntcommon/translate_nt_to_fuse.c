@@ -1,3 +1,5 @@
+#ifdef __CYGWIN__
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -54,6 +56,13 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 			fih->gid = XXX;
 			fih->pid = XXX;
 
+			uint32_t fnamelen;
+			uint16_t *fnamep;
+			fusent_decode_request_create((FUSENT_CREATE_REQ *)req,
+					&fnamelen, &fnamep);
+			// TODO: Now that we have the filename, where do we put it?
+			// Do we need to translate UTF-16LE to UTF-8?
+
 			if (fuse_flags & O_CREAT) {
 				struct fuse_create_in *fc = (struct fuse_create_in *)(fih + 1);
 				fc->flags = fuse_flags;
@@ -85,3 +94,5 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 
 	return 0;
 }
+
+#endif /* __CYGWIN__ */
