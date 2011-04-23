@@ -5,28 +5,33 @@
 
 // Requests from Kernel to Userspace
 
-typedef struct FUSENT_GENERIC_REQ {
+typedef struct FUSENT_REQ {
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	IRP irp;
-	uint8_t irpstack[0];
+	IO_STACK_LOCATION iostack[0];
 };
 
 typedef struct FUSENT_CREATE_REQ {
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	IRP irp;
-	uint32_t fnamelen; // in bytes
-	uint8_t rem[0]; // irp stack, followed by fnamelen
-	// bytes of UTF-16LE file name
+	IO_STACK_LOCATION iostack[0];
+
+	// Followed by:
+	// uint32_t fnamelen; // in bytes
+	// uint8_t fname[0]; // fnamelen bytes of UTF-16LE file name
 };
 
 typedef struct FUSENT_WRITE_REQ {
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	IRP irp;
-	uint32_t buflen;
-	uint8_t rem[0]; // irp stack, followed by buflen bytes of write data
+	IO_STACK_LOCATION iostack[0];
+
+	// Followed by:
+	// uint32_t buflen;
+	// uint8_t buf[0]; // buflen bytes of write data
 };
 
 // Responses (Userspace to Kernelspace)
