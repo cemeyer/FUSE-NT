@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <fuse_kernel.h>
 #include "ntproto.h"
@@ -63,9 +64,9 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 			fih->opcode = XXX;
 			fih->unique = XXX;
 			fih->nodeid = XXX;
-			fih->uid = XXX;
-			fih->gid = XXX;
-			fih->pid = XXX;
+			fih->uid = 0;		// TODO: give these meaningful values
+			fih->gid = 0;
+			fih->pid = getpid();
 
 			uint32_t fnamelen;
 			uint16_t *fnamep;
