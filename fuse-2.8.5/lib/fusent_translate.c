@@ -8,6 +8,17 @@
 #include "ntproto.h"
 #include "irpdecode.h"
 
+// Sets up any data structures fusent_translate will need to persist
+// across calls.
+void fusent_translate_setup()
+{
+}
+
+// Destroys any persistant data structures at shut down.
+void fusent_translate_teardown()
+{
+}
+
 // Translates a FUSENT kernel request (`req') into a FUSE request, filling in
 // `outbuf'; `sz' takes on the length of `outbuf' in bytes.
 //

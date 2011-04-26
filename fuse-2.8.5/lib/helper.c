@@ -12,6 +12,7 @@
 #include "fuse_opt.h"
 #include "fuse_lowlevel.h"
 #include "fuse_common_compat.h"
+#include "fusent_translate.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -319,6 +320,9 @@ static int fuse_main_common(int argc, char *argv[],
 	int multithreaded;
 	int res;
 
+#ifdef __CYGWIN__
+	fusent_translate_setup();
+#endif
 	fuse = fuse_setup_common(argc, argv, op, op_size, &mountpoint,
 				 &multithreaded, NULL, user_data, compat);
 	if (fuse == NULL)
@@ -330,6 +334,9 @@ static int fuse_main_common(int argc, char *argv[],
 		res = fuse_loop(fuse);
 
 	fuse_teardown_common(fuse, mountpoint);
+#ifdef __CYGWIN__
+	fusent_translate_teardown();
+#endif
 	if (res == -1)
 		return 1;
 
