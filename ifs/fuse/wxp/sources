@@ -7,4 +7,5 @@ MSC_WARNING_LEVEL=/W3 /WX
 
 SOURCES=Fuse.rc \
         FuseInit.c  \
+        FuseIo.c  \
 

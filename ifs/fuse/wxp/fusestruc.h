@@ -176,295 +176,51 @@ typedef enum _VCB_CONDITION {
     VcbBad
 } VCB_CONDITION;
 
+// we will need to redefine this--the basic VCB structure comes from cdfs
+
 typedef struct _VCB {
 
     //
-    //  This is a common head for the FAT volume file
-    //
-
-    FSRTL_ADVANCED_FCB_HEADER VolumeFileHeader;
-
-    //
-    //  The links for the device queue off of FatData.VcbQueue
-    //
-
-    LIST_ENTRY VcbLinks;
-
-    //
-    //  A pointer the device object passed in by the I/O system on a mount
-    //  This is the target device object that the file system talks to when it
-    //  needs to do any I/O (e.g., the disk stripper device object).
-    //
-    //
-
-    PDEVICE_OBJECT TargetDeviceObject;
-
-    //
-    //  A pointer to the VPB for the volume passed in by the I/O system on
-    //  a mount.
+    //  Vpb for this volume.
     //
 
     PVPB Vpb;
 
     //
-    //  The internal state of the device.  This is a collection of fsd device
-    //  state flags.
+    //  File object used to lock the volume.
+    //
+
+    PFILE_OBJECT VolumeLockFileObject;
+
+    //
+    //  State flags and condition for the Vcb.
     //
 
     ULONG VcbState;
     VCB_CONDITION VcbCondition;
 
     //
-    //  A pointer to the root DCB for this volume
+    //  Various counts for this Vcb.
+    //
+    //      VcbCleanup - Open handles left on this system.
+    //      VcbReference - Number of reasons this Vcb is still present.
+    //      VcbUserReference - Number of user file objects still present.
     //
 
-    struct _FCB *RootDcb;
+    ULONG VcbCleanup;
+    ULONG VcbReference;
+    ULONG VcbUserReference;
 
     //
-    //  If the FAT has so many entries that the free cluster bitmap would
-    //  be too large, we split the FAT into buckets, and only one bucket's
-    //  worth of bits are kept in the bitmap.
+    //  Vcb fast mutex.  This is used to synchronize the fields in the Vcb
+    //  when modified when the Vcb is not held exclusively.  Included here
+    //  are the count fields and Fcb table.
+    //
+    //  We also use this to synchronize changes to the Fcb reference field.
     //
 
-    ULONG NumberOfWindows;
-    PFAT_WINDOW Windows;
-    PFAT_WINDOW CurrentWindow;
-
-    //
-    //  A count of the number of file objects that have opened the volume
-    //  for direct access, and their share access state.
-    //
-
-    CLONG DirectAccessOpenCount;
-    SHARE_ACCESS ShareAccess;
-
-    //
-    //  A count of the number of file objects that have any file/directory
-    //  opened on this volume, not including direct access.  And also the
-    //  count of the number of file objects that have a file opened for
-    //  only read access (i.e., they cannot be modifying the disk).
-    //
-
-    CLONG OpenFileCount;
-    CLONG ReadOnlyCount;
-
-    //
-    // A count of the number of internal opens on this VCB.
-    //
-
-    ULONG InternalOpenCount;
-
-    //
-    // A count of the number of residual opens on this volume.
-    // This is usually two or three. One is for the virtual volume
-    // file. One is for the root directory. And one is for the
-    // EA file, if there is one.
-    //
-
-    ULONG ResidualOpenCount;
-
-    //
-    //  The bios parameter block field contains
-    //  an unpacked copy of the bpb for the volume, it is initialized
-    //  during mount time and can be read by everyone else after that.
-    //
-
-    BIOS_PARAMETER_BLOCK Bpb;
-
-    PUCHAR First0x24BytesOfBootSector;
-
-    //
-    //  The following structure contains information useful to the
-    //  allocation support routines.  Many of them are computed from
-    //  elements of the Bpb, but are too involved to recompute every time
-    //  they are needed.
-    //
-
-    struct {
-
-        LBO RootDirectoryLbo;       // Lbo of beginning of root directory
-        LBO FileAreaLbo;            // Lbo of beginning of file area
-        ULONG RootDirectorySize;    // size of root directory in bytes
-
-        ULONG NumberOfClusters;     // total number of clusters on the volume
-        ULONG NumberOfFreeClusters; // number of free clusters on the volume
-
-        UCHAR FatIndexBitSize;      // indicates if 12, 16, or 32 bit fat table
-
-        UCHAR LogOfBytesPerSector;  // Log(Bios->BytesPerSector)
-        UCHAR LogOfBytesPerCluster; // Log(Bios->SectorsPerCluster)
-
-    } AllocationSupport;
-
-    //
-    //  The following Mcb is used to keep track of dirty sectors in the Fat.
-    //  Runs of holes denote clean sectors while runs of LBO == VBO denote
-    //  dirty sectors.  The VBOs are that of the volume file, starting at
-    //  0.  The granuality of dirt is one sectors, and additions are only
-    //  made in sector chunks to prevent problems with several simultaneous
-    //  updaters.
-    //
-
-    LARGE_MCB DirtyFatMcb;
-
-    //
-    //  The FreeClusterBitMap keeps track of all the clusters in the fat.
-    //  A 1 means occupied while a 0 means free.  It allows quick location
-    //  of contiguous runs of free clusters.  It is initialized on mount
-    //  or verify.
-    //
-
-    RTL_BITMAP FreeClusterBitMap;
-
-    //
-    //  The following fast mutex controls access to the free cluster bit map
-    //  and the buckets.
-    //
-
-    FAST_MUTEX FreeClusterBitMapMutex;
-
-    //
-    //  A resource variable to control access to the volume specific data
-    //  structures
-    //
-
-    ERESOURCE Resource;
-
-    //
-    //  A resource to make sure no one changes the volume bitmap while
-    //  you're using it.  Only for volumes with NumberOfWindows > 1.
-    //
-
-    ERESOURCE ChangeBitMapResource;
-
-
-    //
-    //  The following field points to the file object used to do I/O to
-    //  the virtual volume file.  The virtual volume file maps sectors
-    //  0 through the end of fat and is of a fixed size (determined during
-    //  mount)
-    //
-
-    PFILE_OBJECT VirtualVolumeFile;
-
-    //
-    //  The following field contains a record of special pointers used by
-    //  MM and Cache to manipluate section objects.  Note that the values
-    //  are set outside of the file system.  However the file system on an
-    //  open/create will set the file object's SectionObject field to point
-    //  to this field
-    //
-
-    SECTION_OBJECT_POINTERS SectionObjectPointers;
-
-    //
-    //  The following fields is a hint cluster index used by the file system
-    //  when allocating a new cluster.
-    //
-
-    ULONG ClusterHint;
-
-    //
-    //  This field contains the "DeviceObject" that this volume is
-    //  currently mounted on.  Note Vcb->Vpb->RealDevice is constant.
-    //
-
-    PDEVICE_OBJECT CurrentDevice;
-
-    //
-    //  This is a pointer to the file object and the Fcb which represent the ea data.
-    //
-
-    PFILE_OBJECT VirtualEaFile;
-    struct _FCB *EaFcb;
-
-    //
-    //  The following field is a pointer to the file object that has the
-    //  volume locked. if the VcbState has the locked flag set.
-    //
-
-    PFILE_OBJECT FileObjectWithVcbLocked;
-
-    //
-    //  The following is the head of a list of notify Irps.
-    //
-
-    LIST_ENTRY DirNotifyList;
-
-    //
-    //  The following is used to synchronize the dir notify list.
-    //
-
-    PNOTIFY_SYNC NotifySync;
-
-    //
-    //  The following fast mutex is used to synchronize directory stream
-    //  file object creation.
-    //
-
-    FAST_MUTEX DirectoryFileCreationMutex;
-
-    //
-    //  This field holds the thread address of the current (or most recent
-    //  depending on VcbState) thread doing a verify operation on this volume.
-    //
-
-    PKTHREAD VerifyThread;
-
-    //
-    //  The following two structures are used for CleanVolume callbacks.
-    //
-
-    KDPC CleanVolumeDpc;
-    KTIMER CleanVolumeTimer;
-
-    //
-    //  This field records the last time FatMarkVolumeDirty was called, and
-    //  avoids excessive calls to push the CleanVolume forward in time.
-    //
-
-    LARGE_INTEGER LastFatMarkVolumeDirtyCall;
-
-    //
-    //  The following fields holds a pointer to a struct which is used to
-    //  hold performance counters.
-    //
-
-    struct _FILE_SYSTEM_STATISTICS *Statistics;
-
-    //
-    //  The property tunneling cache for this volume
-    //
-
-    TUNNEL Tunnel;
-
-    //
-    //  The media change count is returned by IOCTL_CHECK_VERIFY and
-    //  is used to verify that no user-mode app has swallowed a media change
-    //  notification.  This is only meaningful for removable media.
-    //
-
-    ULONG ChangeCount;
-
-    //
-    //  Preallocated VPB for swapout, so we are not forced to consider
-    //  must succeed pool.
-    //
-
-    PVPB SwapVpb;
-
-    //
-    //  Per volume threading of the close queues.
-    //
-
-    LIST_ENTRY AsyncCloseList;
-    LIST_ENTRY DelayedCloseList;
-
-    //
-    //  Fast mutex used by the ADVANCED FCB HEADER in this structure
-    //
-
-    FAST_MUTEX AdvancedFcbHeaderMutex;
+    FAST_MUTEX VcbMutex;
+    PVOID VcbLockThread;
 
 } VCB;
 typedef VCB *PVCB;
@@ -791,28 +547,6 @@ typedef struct _FCB {
 
     CLONG NonCachedUncleanCount;
 
-    //
-    //  The following field is used to locate the dirent for this fcb/dcb.
-    //  All directory are opened as mapped files so the only additional
-    //  information we need to locate this dirent (beside its parent directory)
-    //  is the byte offset for the dirent.  Note that for the root dcb
-    //  this field is not used.
-    //
-
-    VBO DirentOffsetWithinDirectory;
-
-    //
-    //  The following field is filled in when there is an Lfn associated
-    //  with this file.  It is the STARTING offset of the Lfn.
-    //
-
-    VBO LfnOffsetWithinDirectory;
-
-    //
-    //  Thess entries is kept in ssync with the dirent.  It allows a more
-    //  accurate verify capability and speeds up FatFastQueryBasicInfo().
-    //
-
     LARGE_INTEGER CreationTime;
     LARGE_INTEGER LastAccessTime;
     LARGE_INTEGER LastWriteTime;
@@ -864,20 +598,6 @@ typedef struct _FCB {
 
             ULONG DirectoryFileOpenCount;
             PFILE_OBJECT DirectoryFile;
-
-            //
-            //  If the UnusedDirentVbo is != 0xffffffff, then the dirent at this
-            //  offset is guarenteed to unused.  A value of 0xffffffff means
-            //  it has yet to be initialized.  Note that a value beyond the
-            //  end of allocation means that there an unused dirent, but we
-            //  will have to allocate another cluster to use it.
-            //
-            //  DeletedDirentHint contains lowest possible VBO of a deleted
-            //  dirent (assuming as above that it is not 0xffffffff).
-            //
-
-            VBO UnusedDirentVbo;
-            VBO DeletedDirentHint;
 
             //
             //  The following two entries links together all the Fcbs
@@ -1240,123 +960,7 @@ typedef struct _CLOSE_CONTEXT {
 } CLOSE_CONTEXT;
 
 typedef CLOSE_CONTEXT *PCLOSE_CONTEXT;
-
-typedef struct _CCB {
-
-    //
-    //  Type and size of this record (must be FAT_NTC_CCB)
-    //
-
-    NODE_TYPE_CODE NodeTypeCode;
-    NODE_BYTE_SIZE NodeByteSize;
-
-    //
-    //  Define a 24bit wide field for Flags, but a UCHAR for Wild Cards Present
-    //  since it is used so often.  Line these up on byte boundaries for grins.
-    //
-
-    ULONG Flags:24;
-    BOOLEAN ContainsWildCards;
-
-    //
-    //  Overlay a close context on the data of the CCB.  The remaining
-    //  fields are not useful during close, and we would like to avoid
-    //  paying extra pool for it.
-    //
-
-    union {
-        
-        struct {
-
-            //
-            //  Save the offset to start search from.
-            //
-
-            VBO OffsetToStartSearchFrom;
-
-            //
-            //  The query template is used to filter directory query requests.
-            //  It originally is set to null and on the first call the NtQueryDirectory
-            //  it is set to the input filename or "*" if the name is not supplied.
-            //  All subsquent queries then use this template.
-            //
-            //  The Oem structure are unions because if the name is wild we store
-            //  the arbitrary length string, while if the name is constant we store
-            //  8.3 representation for fast comparison.
-            //
-
-            union {
-
-                //
-                //  If the template contains a wild card use this.
-                //
-
-                OEM_STRING Wild;
-
-                //
-                //  If the name is constant, use this part.
-                //
-
-                FAT8DOT3 Constant;
-
-            } OemQueryTemplate;
-
-            UNICODE_STRING UnicodeQueryTemplate;
-
-            //
-            //  The field is compared with the similar field in the Fcb to determine
-            //  if the Ea's for a file have been modified.
-            //
-
-            ULONG EaModificationCount;
-
-            //
-            //  The following field is used as an offset into the Eas for a
-            //  particular file.  This will be the offset for the next
-            //  Ea to return.  A value of 0xffffffff indicates that the
-            //  Ea's are exhausted.
-            //
-
-            ULONG OffsetOfNextEaToReturn;
-
-        };
-
-        CLOSE_CONTEXT CloseContext;
-    };
-    
-} CCB;
-typedef CCB *PCCB;
 
-//
-//  The Irp Context record is allocated for every orginating Irp.  It is
-//  created by the Fsd dispatch routines, and deallocated by the FatComplete
-//  request routine.  It contains a structure called of type REPINNED_BCBS
-//  which is used to retain pinned bcbs needed to handle abnormal termination
-//  unwinding.
-//
-
-#define REPINNED_BCBS_ARRAY_SIZE         (4)
-
-typedef struct _REPINNED_BCBS {
-
-    //
-    //  A pointer to the next structure contains additional repinned bcbs
-    //
-
-    struct _REPINNED_BCBS *Next;
-
-    //
-    //  A fixed size array of pinned bcbs.  Whenever a new bcb is added to
-    //  the repinned bcb structure it is added to this array.  If the
-    //  array is already full then another repinned bcb structure is allocated
-    //  and pointed to with Next.
-    //
-
-    PBCB Bcb[ REPINNED_BCBS_ARRAY_SIZE ];
-
-} REPINNED_BCBS;
-typedef REPINNED_BCBS *PREPINNED_BCBS;
-
 typedef struct _IRP_CONTEXT {
 
     //
@@ -1421,13 +1025,6 @@ typedef struct _IRP_CONTEXT {
     //
 
     struct _FAT_IO_CONTEXT *FatIoContext;
-
-    //
-    //  For a abnormal termination unwinding this field contains the Bcbs
-    //  that are kept pinned until the Irp is completed.
-    //
-
-    REPINNED_BCBS Repinned;
 
 } IRP_CONTEXT;
 typedef IRP_CONTEXT *PIRP_CONTEXT;
@@ -1504,8 +1101,6 @@ typedef FAT_IO_CONTEXT *PFAT_IO_CONTEXT;
 
 typedef struct _IO_RUNS {
 
-    LBO Lbo;
-    VBO Vbo;
     ULONG Offset;
     ULONG ByteCount;
     PIRP SavedIrp;

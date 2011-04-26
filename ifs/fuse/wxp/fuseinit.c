@@ -18,6 +18,9 @@ Abstract:
 #include <ntdddisk.h>
 #include <ntddstor.h>
 
+#include "fuseprocs.h"
+#include "ntproto.h"
+
 
 PDEVICE_OBJECT FuseFileSystemDeviceObject;
 
@@ -108,42 +111,48 @@ Return Value:
     // Initialize the driver object with this driver's entry points.
     //
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]                   = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_READ]                     = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_WRITE]                    = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_INFORMATION]        = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_SET_INFORMATION]          = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_EA]                 = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_SET_EA]                   = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = (PDRIVER_DISPATCH)NULL;
-    DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)NULL;
+    // do we need a separate function for each of these or can we have one
+    // that just passes up the calls directly?
+
+    DriverObject->MajorFunction[IRP_MJ_CREATE]                   = (PDRIVER_DISPATCH)FuseFsdCreate;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = (PDRIVER_DISPATCH)FuseFsdClose;
+    DriverObject->MajorFunction[IRP_MJ_READ]                     = (PDRIVER_DISPATCH)FuseFsdRead;
+    DriverObject->MajorFunction[IRP_MJ_WRITE]                    = (PDRIVER_DISPATCH)FuseFsdWrite;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_INFORMATION]        = (PDRIVER_DISPATCH)FuseFsdQueryInformation;
+    DriverObject->MajorFunction[IRP_MJ_SET_INFORMATION]          = (PDRIVER_DISPATCH)FuseFsdSetInformation;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_EA]                 = (PDRIVER_DISPATCH)FuseFsdQueryEa;
+    DriverObject->MajorFunction[IRP_MJ_SET_EA]                   = (PDRIVER_DISPATCH)FuseFsdSetEa;
+    DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = (PDRIVER_DISPATCH)FuseFsdFlushBuffers;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = (PDRIVER_DISPATCH)FuseFsdQueryVolumeInformation;
+    DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = (PDRIVER_DISPATCH)FuseFsdSetVolumeInformation;
+    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = (PDRIVER_DISPATCH)FuseFsdCleanup;
+    DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = (PDRIVER_DISPATCH)FuseFsdDirectoryControl;
+    DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = (PDRIVER_DISPATCH)FuseFsdFileSystemControl;
+    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = (PDRIVER_DISPATCH)FuseFsdLockControl;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = (PDRIVER_DISPATCH)FuseFsdDeviceControl;
+    DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = (PDRIVER_DISPATCH)FuseFsdShutdown;
+    DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)FuseFsdPnp;
+
+    DriverObject->MajorFunction[IRP_FUSE_MOUNT]                  = (PDRIVER_DISPATCH)FuseMount;
+    DriverObject->MajorFunction[IRP_FUSE_REQUEST]                = (PDRIVER_DISPATCH)FuseRequest;
 
     DriverObject->FastIoDispatch = &FuseFastIoDispatch;
 
     RtlZeroMemory(&FuseFastIoDispatch, sizeof(FuseFastIoDispatch));
 
     FuseFastIoDispatch.SizeOfFastIoDispatch =    sizeof(FAST_IO_DISPATCH);
-    FuseFastIoDispatch.FastIoCheckIfPossible =   NULL;  //  CheckForFastIo
-    FuseFastIoDispatch.FastIoRead =              NULL;             //  Read
-    FuseFastIoDispatch.FastIoWrite =             NULL;            //  Write
-    FuseFastIoDispatch.FastIoQueryBasicInfo =    NULL;     //  QueryBasicInfo
-    FuseFastIoDispatch.FastIoQueryStandardInfo = NULL;       //  QueryStandardInfo
-    FuseFastIoDispatch.FastIoLock =              NULL;               //  Lock
-    FuseFastIoDispatch.FastIoUnlockSingle =      NULL;       //  UnlockSingle
-    FuseFastIoDispatch.FastIoUnlockAll =         NULL;          //  UnlockAll
-    FuseFastIoDispatch.FastIoUnlockAllByKey =    NULL;     //  UnlockAllByKey
-    FuseFastIoDispatch.FastIoQueryNetworkOpenInfo = NULL;
-    FuseFastIoDispatch.AcquireForCcFlush =       NULL;
-    FuseFastIoDispatch.ReleaseForCcFlush =       NULL;
+    FuseFastIoDispatch.FastIoCheckIfPossible =   FuseFastIoCheckIfPossible;  //  CheckForFastIo
+    FuseFastIoDispatch.FastIoRead =              FsRtlCopyRead;             //  Read
+    FuseFastIoDispatch.FastIoWrite =             FsRtlCopyWrite;            //  Write
+    FuseFastIoDispatch.FastIoQueryBasicInfo =    FuseFastQueryBasicInfo;     //  QueryBasicInfo
+    FuseFastIoDispatch.FastIoQueryStandardInfo = FuseFastQueryStdInfo;       //  QueryStandardInfo
+    FuseFastIoDispatch.FastIoLock =              FuseFastLock;               //  Lock
+    FuseFastIoDispatch.FastIoUnlockSingle =      FuseFastUnlockSingle;       //  UnlockSingle
+    FuseFastIoDispatch.FastIoUnlockAll =         FuseFastUnlockAll;          //  UnlockAll
+    FuseFastIoDispatch.FastIoUnlockAllByKey =    FuseFastUnlockAllByKey;     //  UnlockAllByKey
+    FuseFastIoDispatch.FastIoQueryNetworkOpenInfo = FuseFastQueryNetworkOpenInfo;
+    FuseFastIoDispatch.AcquireForCcFlush =       FuseAcquireForCcFlush;
+    FuseFastIoDispatch.ReleaseForCcFlush =       FuseReleaseForCcFlush;
 
     //
     //  Register the file system with the I/O system
