@@ -33,7 +33,10 @@ libfuse_la_SOURCES = 		\
 	helper.c		\
 	modules/subdir.c	\
 	$(iconv_source)		\
-	$(mount_source)
+	$(mount_source)		\
+	st.c			\
+	fusent_irpdecode.c	\
+	fusent_translate.c
 
 libfuse_la_LDFLAGS = @libfuse_libs@ -version-number 2:8:5 \
 	-Wl,--version-script,$(srcdir)/fuse_versionscript
