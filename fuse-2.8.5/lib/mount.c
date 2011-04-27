@@ -431,8 +431,13 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 		return -1;
 	}
 
+#if defined(__CYGWIN__)
+	snprintf(tmp, sizeof(tmp),  "fd=%i,rootmode=%o,user_id=%lu,group_id=%lu",
+		 fd, stbuf.st_mode & S_IFMT, getuid(), getgid());
+#else
 	snprintf(tmp, sizeof(tmp),  "fd=%i,rootmode=%o,user_id=%i,group_id=%i",
 		 fd, stbuf.st_mode & S_IFMT, getuid(), getgid());
+#endif
 
 	res = fuse_opt_add_opt(&mo->kernel_opts, tmp);
 	if (res == -1)
@@ -456,6 +461,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 	strcpy(source,
 	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
 
+#if !defined(__CYGWIN__)
 	res = mount(source, mnt, type, mo->flags, mo->kernel_opts);
 	if (res == -1 && errno == ENODEV && mo->subtype) {
 		// Probably missing subtype support
@@ -500,6 +506,9 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 		if (res == -1)
 			goto out_umount;
 	}
+
+#endif /* !__CYGWIN__ */
+
 	free(type);
 	free(source);
 

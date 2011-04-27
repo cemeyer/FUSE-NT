@@ -5,9 +5,12 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <fuse_kernel.h>
-#include "ntproto.h"
-#include "irpdecode.h"
+#include "fuse_kernel.h"
+#include "fusent_proto.h"
+#include "fusent_irpdecode.h"
+
+// To get this to compile before I'm finished, uncomment the following:
+//#define XXX 0xdeadbeef
 
 // Sets up any data structures fusent_translate will need to persist
 // across calls.
@@ -41,6 +44,7 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 			// one-to-one with NT. Does anyone actually use
 			// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
 
+			{
 			uint32_t CreateOptions = iosp->Parameters.Create.Options;
 			uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
 
@@ -86,11 +90,12 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 			}
 			else {
 				struct fuse_open_in *fo = (struct fuse_open_in *)(fih + 1);
-				fo->fh = XXX;
-				fo->open_flags = fuse_flags;
+				//fo->fh = XXX;
+				//fo->open_flags = fuse_flags;
 				// TODO: verify this is the intended purpose of ->len field:
 				*sz = fih->len = sizeof(struct fuse_in_header) +
 					sizeof(struct fuse_open_in);
+			}
 			}
 
 			break;

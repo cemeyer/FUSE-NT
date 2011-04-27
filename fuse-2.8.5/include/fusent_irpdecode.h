@@ -2,6 +2,18 @@
 #ifndef IRPDECODE_H
 #define IRPDECODE_H
 
+// Windows headers don't pull in their own dependencies... see fusent_proto.h:
+#define NTOSAPI /**/
+#ifndef DDKAPI
+# define DDKAPI /**/
+#endif
+#include <windef.h>
+#include <winnt.h>
+#include <ntdef.h>
+#include <ddk/ntddk.h>
+#include <ddk/winddk.h>
+#include <stdint.h>
+
 // Decodes an IRP (and associated IO stack) to locate the current stack entry
 // and the IRP major number.
 //

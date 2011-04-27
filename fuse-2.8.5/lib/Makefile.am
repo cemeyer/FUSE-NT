@@ -36,6 +36,7 @@ libfuse_la_SOURCES = 		\
 	$(mount_source)		\
 	st.c			\
 	fusent_irpdecode.c	\
+	fusent_proto.c		\
 	fusent_translate.c
 
 libfuse_la_LDFLAGS = @libfuse_libs@ -version-number 2:8:5 \

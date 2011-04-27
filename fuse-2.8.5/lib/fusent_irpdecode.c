@@ -1,4 +1,5 @@
 #ifdef __CYGWIN__
+#include "fusent_irpdecode.h"
 
 // Decodes an IRP (and associated IO stack) to locate the current stack entry
 // and the IRP major number.
