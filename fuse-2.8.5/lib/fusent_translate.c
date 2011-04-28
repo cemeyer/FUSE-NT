@@ -44,10 +44,9 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 			// one-to-one with NT. Does anyone actually use
 			// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
 
-			{
+			{	// Scope is here so we can define more stack variables:
 			uint32_t CreateOptions = iosp->Parameters.Create.Options;
 			uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
-
 			uint8_t CreateDisp = CreateOptions >> 24;
 
 			int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
@@ -68,7 +67,7 @@ int fusent_translate_nt_to_fuse(FUSENT_REQ *req, char *outbuf, int *sz)
 			fih->opcode = XXX;
 			fih->unique = XXX;
 			fih->nodeid = XXX;
-			fih->uid = 0;		// TODO: give these meaningful values
+			fih->uid = 0;		// TODO: do these even have meaningful values?
 			fih->gid = 0;
 			fih->pid = getpid();
 
