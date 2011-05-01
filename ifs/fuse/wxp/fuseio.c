@@ -12,6 +12,7 @@ Abstract:
 
 --*/
 
+#include <ntdef.h>
 #include "fuseprocs.h"
 #include "ntproto.h"
 
@@ -22,7 +23,18 @@ FuseFsdFileSystemControl (
     )
 {
     PIO_STACK_LOCATION IrpSp;
+    WCHAR* InMessage, *OutMessage;
+
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    InMessage = (WCHAR *) IrpSp->Parameters.FileSystemControl.Type3InputBuffer;
+    OutMessage = (WCHAR *) Irp->UserBuffer;
+
+    // outside of testing, this should be wrapped in a try-except with ProbeForRead/ProbeForWrite
+    // this isn't printing the right thing currently...
+    DbgPrint("Test program sent message: \"%S\"\n", InMessage);
+
+    wcscpy(OutMessage, L"The FUSE driver says 'hello'");
 
     DbgPrint("FuseFsdFileSystemControl\n");
 
