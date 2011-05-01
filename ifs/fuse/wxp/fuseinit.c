@@ -19,7 +19,6 @@ Abstract:
 #include <ntddstor.h>
 
 #include "fuseprocs.h"
-#include "ntproto.h"
 
 
 PDEVICE_OBJECT FuseFileSystemDeviceObject;
@@ -81,7 +80,7 @@ Return Value:
                              0,
                              &UnicodeString,
                              FILE_DEVICE_DISK_FILE_SYSTEM,
-                             0,
+                             FILE_DEVICE_SECURE_OPEN,
                              FALSE,
                              &FuseFileSystemDeviceObject );
 
@@ -132,9 +131,6 @@ Return Value:
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = (PDRIVER_DISPATCH)FuseFsdDeviceControl;
     DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = (PDRIVER_DISPATCH)FuseFsdShutdown;
     DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)FuseFsdPnp;
-
-    DriverObject->MajorFunction[IRP_FUSE_MOUNT]                  = (PDRIVER_DISPATCH)FuseMount;
-    DriverObject->MajorFunction[IRP_FUSE_REQUEST]                = (PDRIVER_DISPATCH)FuseRequest;
 
     DriverObject->FastIoDispatch = &FuseFastIoDispatch;
 

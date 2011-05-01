@@ -13,37 +13,20 @@ Abstract:
 --*/
 
 #include "fuseprocs.h"
+#include "ntproto.h"
 
 NTSTATUS
-FuseMount (
+FuseFsdFileSystemControl (
     IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
-    NTSTATUS Status;
+    PIO_STACK_LOCATION IrpSp;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    DbgPrint("FuseMount\n");
+    DbgPrint("FuseFsdFileSystemControl\n");
 
-    Status = STATUS_SUCCESS;
-    IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-
-    return Status;
-}
-
-NTSTATUS
-FuseRequest (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    )
-{
-    NTSTATUS Status;
-
-    DbgPrint("FuseRequest\n");
-
-    Status = STATUS_SUCCESS;
-    IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-
-    return Status;
+	return STATUS_SUCCESS;
 }
 
 
@@ -53,7 +36,12 @@ FuseFsdCleanup (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    PIO_STACK_LOCATION IrpSp;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    DbgPrint("FuseFsdCleanup\n");
+
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -62,8 +50,11 @@ FuseFsdClose (
     IN PIRP Irp
     )
 {
+    PIO_STACK_LOCATION IrpSp;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
     DbgPrint("FuseFsdClose\n");
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -72,8 +63,11 @@ FuseFsdCreate (
     IN PIRP Irp
     )
 {
+    PIO_STACK_LOCATION IrpSp;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
     DbgPrint("FuseFsdCreate\n");
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -82,8 +76,11 @@ FuseFsdRead (
     IN PIRP Irp
     )
 {
+    PIO_STACK_LOCATION IrpSp;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
     DbgPrint("FuseFsdRead\n");
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -92,8 +89,11 @@ FuseFsdWrite (
     IN PIRP Irp
     )
 {
+    PIO_STACK_LOCATION IrpSp;
+    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
     DbgPrint("FuseFsdWrite\n");
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -102,7 +102,9 @@ FuseFsdDeviceControl (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdDeviceControl\n");
+
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -152,15 +154,6 @@ FuseFsdSetInformation (
 
 NTSTATUS
 FuseFsdFlushBuffers (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    )
-{
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
-}
-
-NTSTATUS
-FuseFsdFileSystemControl (
     IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
