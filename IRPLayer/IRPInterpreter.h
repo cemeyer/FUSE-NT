@@ -1,4 +1,5 @@
 #ifndef IRPINTERPRETER_H
+#include "wdm.h"
 #define IRPINTERPRETER_H
 
 //Create a function to handle a few irps and wake up a thread
@@ -12,6 +13,15 @@ void fusent_write_req(FUSENT_WRITE_REQ *wreq, PIRP pirp);
 FUSENT_REQ *get_fusent_req(PIRP pirp);
 FUSENT_CREATE_REQ *get_fusent_create_req(PIRP pirp);
 FUSENT_WRITE_REQ *get_fusent_write_req(PIRP pirp);
+
+void FUSENT_SEND_TO_LIBFUSE(PIRP pirp) {
+	SetEvent(pirp->UserEvent);
+	IoCompleteRequest(pirp, IO_DISK_INCREMENT);
+}
+
+void FUSENT_SEND_TO_USER(PIRP pirp) {
+	IoCompleteRequest(pirp, IO_DISK_INCREMENT);
+}
 
 /*
 void put_fusent_generic_resp(FUSENT_GENERIC_RESP *gresp, PIRP pirp);
