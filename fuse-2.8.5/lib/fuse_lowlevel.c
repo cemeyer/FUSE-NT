@@ -13,6 +13,17 @@
 #include "fuse_common_compat.h"
 #include "fuse_lowlevel_compat.h"
 
+#ifdef __CYGWIN__
+# include "fusent_proto.h"
+# include "fusent_irpdecode.h"
+
+# include <iconv.h>
+
+# include <sys/types.h>
+# include <sys/stat.h>
+# include <fcntl.h>
+#endif /* __CYGWIN__ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -23,6 +34,22 @@
 
 #define PARAM(inarg) (((char *)(inarg)) + sizeof(*(inarg)))
 #define OFFSET_MAX 0x7fffffffffffffffLL
+
+#ifdef __CYGWIN__
+// Sets up any data structures the fusent translate layer will need to persist
+// across calls.
+static iconv_t cd_utf16le_to_utf8;
+void fusent_translate_setup()
+{
+	cd_utf16le_to_utf8 = iconv_open("UTF-8//IGNORE", "UTF-16LE");
+}
+
+// Destroys any persistant data structures at shut down.
+void fusent_translate_teardown()
+{
+	iconv_close(cd_utf16le_to_utf8);
+}
+#endif /* __CYGWIN__ */
 
 struct fuse_pollhandle {
 	uint64_t kh;
@@ -1457,17 +1484,84 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	int err;
 
 #if defined __CYGWIN__
-	// TODO(cemeyer) translate and dispatch here
+	FUSENT_REQ *ntreq = (FUSENT_REQ *)buf;
+
+	req = (struct fuse_req *) calloc(1, sizeof(struct fuse_req));
+	if (req == NULL) {
+		fprintf(stderr, "fuse: failed to allocate request\n");
+		return;
+	}
+
+	int status, err;
+	IO_STACK_LOCATION *iosp;
+	uint8_t irptype;
+
+	err = EIO;
+
+	status = fusent_decode_irp(&ntreq->irp, &ntreq->iostack[0], &irptype, &iosp);
+	if (status < 0) goto reply_err_nt;
+
+	switch (irptype) {
+		case IRP_MJ_CREATE:
+			{
+			// Some of the behavior here probably doesn't match
+			// one-to-one with NT. Does anyone actually use
+			// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
+			// -- cemeyer
+
+			// Decode NT operation flags from IRP:
+			uint32_t CreateOptions = iosp->Parameters.Create.Options;
+			uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
+			uint8_t CreateDisp = CreateOptions >> 24;
+
+			int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
+			if (CreateDisp != FILE_OPEN && CreateDisp != FILE_OVERWRITE)
+				fuse_flags |= O_CREAT;
+			if (CreateDisp == FILE_CREATE) fuse_flags |= O_EXCL;
+			if (CreateDisp == FILE_OVERWRITE || CreateDisp == FILE_OVERWRITE_IF ||
+					CreateDisp == FILE_SUPERSEDE)
+				fuse_flags |= O_TRUNC;
+			if (CreateOptions & FILE_DIRECTORY_FILE) fuse_flags |= O_DIRECTORY;
+
+			// Extract the file path from the NT request:
+			uint32_t fnamelen;
+			uint16_t *fnamep;
+			fusent_decode_request_create((FUSENT_CREATE_REQ *)ntreq,
+					&fnamelen, &fnamep);
+
+			// Translate it to UTF8:
+			char *inbuf = fnamep;
+			size_t inbytes = fnamelen, outbytes = 255;
+			char stbuf[256];
+			char *outbuf = stbuf;
+
+			iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+
+			// TODO(cemeyer) actually call into the low level fuse ops
+			}
+			break;
+		case IRP_MJ_READ:
+			XXX;
+			break;
+		case IRP_MJ_WRITE:
+			XXX;
+			break;
+		default:
+			goto reply_err_nt;
+	}
+
+reply_err_nt:
+	// TODO(cemeyer) define an error response type, and send it back here
 #else
 	struct fuse_in_header *in = (struct fuse_in_header *) buf;
 	const void *inarg = buf + sizeof(struct fuse_in_header);
 
 	if (f->debug)
 		fprintf(stderr,
-			"unique: %llu, opcode: %s (%i), nodeid: %lu, insize: %zu\n",
-			(unsigned long long) in->unique,
-			opname((enum fuse_opcode) in->opcode), in->opcode,
-			(unsigned long) in->nodeid, len);
+				"unique: %llu, opcode: %s (%i), nodeid: %lu, insize: %zu\n",
+				(unsigned long long) in->unique,
+				opname((enum fuse_opcode) in->opcode), in->opcode,
+				(unsigned long) in->nodeid, len);
 
 	req = (struct fuse_req *) calloc(1, sizeof(struct fuse_req));
 	if (req == NULL) {
