@@ -1453,10 +1453,14 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			    struct fuse_chan *ch)
 {
 	struct fuse_ll *f = (struct fuse_ll *) data;
-	struct fuse_in_header *in = (struct fuse_in_header *) buf;
-	const void *inarg = buf + sizeof(struct fuse_in_header);
 	struct fuse_req *req;
 	int err;
+
+#if defined __CYGWIN__
+	// TODO(cemeyer) translate and dispatch here
+#else
+	struct fuse_in_header *in = (struct fuse_in_header *) buf;
+	const void *inarg = buf + sizeof(struct fuse_in_header);
 
 	if (f->debug)
 		fprintf(stderr,
@@ -1516,6 +1520,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 
  reply_err:
 	fuse_reply_err(req, err);
+#endif
 }
 
 enum {
