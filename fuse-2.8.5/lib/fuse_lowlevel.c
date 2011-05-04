@@ -22,6 +22,8 @@
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <fcntl.h>
+
+# define FUSENT_MAX_PATH 256
 #endif /* __CYGWIN__ */
 
 #include <stdio.h>
@@ -142,6 +144,7 @@ void fuse_free_req(fuse_req_t req)
 		destroy_req(req);
 }
 
+// TODO(cemeyer) Change this function to use the FUSENT responses.
 int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 			       int count)
 {
@@ -1492,6 +1495,28 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 		return;
 	}
 
+	if (!f->got_init) {
+		// Do FUSE init:
+		f->got_init = 1; // Just in case something checks this
+		f->conn.proto_major = 7; // stolen from the 2.6.38 kernel
+		f->conn.proto_minor = 16;
+		f->conn.capable = 0;
+		f->conn.want = 0;
+		f->conn.async_read = 0;
+		if (f->op.init) f->op.init(f->userdata, &f->conn);
+		f->conn.max_write = 8192; // This should be good enough
+	}
+
+	req->f = f;
+	req->unique = 0; // this might not be needed except for interrupts --cemeyer
+	req->ctx.uid = 0; // not sure these have any correct meanings
+	req->ctx.gid = 0;
+	req->ctx.pid = 0; // what is this used for? maybe need to pass as part of the request --cemeyer
+	req->ch = ch;
+	req->ctr = 1;
+	list_init_req(req);
+	fuse_mutex_init(&req->lock);
+
 	int status, err;
 	IO_STACK_LOCATION *iosp;
 	uint8_t irptype;
@@ -1499,7 +1524,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	err = EIO;
 
 	status = fusent_decode_irp(&ntreq->irp, &ntreq->iostack[0], &irptype, &iosp);
-	if (status < 0) goto reply_err_nt;
+	if (status < 0) goto reply_err;
 
 	switch (irptype) {
 		case IRP_MJ_CREATE:
@@ -1532,12 +1557,42 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			// Translate it to UTF8:
 			char *inbuf = fnamep;
 			size_t inbytes = fnamelen, outbytes = 255;
-			char stbuf[256];
-			char *outbuf = stbuf;
 
-			iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+			if (fuse_flags & O_CREAT) {
+				char stbuf[sizeof(fuse_create_in) + FUSENT_MAX_PATH];
+				char *outbuf = stbuf + sizeof(fuse_create_in);;
 
-			// TODO(cemeyer) actually call into the low level fuse ops
+				// Convert and then reset the cd
+				iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+				iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+
+				fuse_create_in *args = stbuf;
+				args->flags = fuse_flags;
+				args->umask = S_IXGRP | S_IXOTH;
+
+				// inode for create() should be inode of parent, apparently
+				//fuse_ll_ops[FUSE_CREAT].func(req, XXX, args);
+			}
+			else {
+				char stbuf[sizeof(fuse_open_in) + FUSENT_MAX_PATH];
+				char *outbuf = stbuf + sizeof(fuse_open_in);;
+
+				// Convert and then reset the cd
+				iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+				iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+
+				fuse_open_in *args = stbuf;
+				args->flags = fuse_flags;
+				args->umask = S_IXGRP | S_IXOTH;
+
+				// inode for open() needs to be looked up with lookup()
+				// lookup() takes parent inode and path -- apparently
+				// root inode is always 1 (not sure about this)? Not
+				// sure if lookup can take an absolute path or if it
+				// must be relative.
+				//fuse_ll_ops[FUSE_LOOKUP].func(req, XXX, YYY);
+				//fuse_ll_ops[FUSE_OPEN].func(req, XXX, ZZZ);
+			}
 			}
 			break;
 		case IRP_MJ_READ:
@@ -1547,11 +1602,9 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			XXX;
 			break;
 		default:
-			goto reply_err_nt;
+			err = ENOSYS;
+			goto reply_err;
 	}
-
-reply_err_nt:
-	// TODO(cemeyer) define an error response type, and send it back here
 #else
 	struct fuse_in_header *in = (struct fuse_in_header *) buf;
 	const void *inarg = buf + sizeof(struct fuse_in_header);
@@ -1611,10 +1664,10 @@ reply_err_nt:
 	}
 	fuse_ll_ops[in->opcode].func(req, in->nodeid, inarg);
 	return;
-
- reply_err:
-	fuse_reply_err(req, err);
 #endif
+
+reply_err:
+	fuse_reply_err(req, err);
 }
 
 enum {
