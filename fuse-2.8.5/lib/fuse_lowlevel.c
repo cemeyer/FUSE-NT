@@ -1479,6 +1479,72 @@ static const char *opname(enum fuse_opcode opcode)
 		return fuse_ll_ops[opcode].name;
 }
 
+// Does an in-place conversion of a Windows-formatted buffer to
+// Unix-formatted. Probably buggy.
+static void fusent_convert_win_path(char *buf, size_t *len) {
+	// For now:
+	//   1) Replace backslashes with slashes
+	for (size_t i = 0; i < *len; i++) {
+		if (buf[i] == '\\') buf[i] = '/';
+	}
+
+	//   2) Strip any beginning drive
+	if (*len > 2 && isalpha(buf[0]) && buf[1] == ':') {
+		*len = *len - 2;
+		memmove(buf, &buf[2], *len);
+	}
+}
+
+// Given a path in `fn' (assume unix format), find the inode of the parent.
+//   e.g. /sbin/route -> inode of /sbin
+// Additionally, locate the offset of the basename in the buffer and
+// return a pointer to it.
+//
+// Returns negative if the parent can't be found or the path is invalid:
+//      stdint.h -> err
+static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino_t *in) {
+	// TODO(cemeyer) handle relative paths, like, at all
+
+	if (*fn != '/') return -1;
+	if (!req->f->op.lookup) return -1;
+	fn ++;
+
+	fuse_ino_t curino = FUSE_ROOT_ID;
+
+	for (;;) {
+		char *nextsl = strchr(fn, '/');
+
+		// If there are no more slashes, we've located the basename and
+		// parent inode number already:
+		if (!nextsl) {
+			*bn = fn;
+			*in = curino;
+			return 0;
+		}
+
+		return -1; // for now, we can't do lookups because lookup
+		// tries to dispatch and reply and that sort of thing.
+		// root directory stuff should still work.
+
+		// Otherwise, lookup the next component of the path:
+		*nextsl = '\0';
+		fuse_ll_ops[FUSE_LOOKUP].func(req, curino, fn);
+		*nextsl = '/';
+
+		// TODO get next inode; check for error
+
+		*fn = nextsl + 1;
+	}
+}
+
+// Given a path in `fn', locate the inode for `fn'.
+// Returns negative if `fn' can't be found.
+static int fusent_get_inode(char *fn, fuse_ino_t *in) {
+	// depends on lookup working. maybe we need to
+	// decouple the sending and recieving channels?
+	return -1;
+}
+
 static void fuse_ll_process(void *data, const char *buf, size_t len,
 			    struct fuse_chan *ch)
 {
@@ -1497,7 +1563,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 
 	if (!f->got_init) {
 		// Do FUSE init:
-		f->got_init = 1; // Just in case something checks this
+		f->got_init = 1;
 		f->conn.proto_major = 7; // stolen from the 2.6.38 kernel
 		f->conn.proto_minor = 16;
 		f->conn.capable = 0;
@@ -1556,42 +1622,68 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 
 			// Translate it to UTF8:
 			char *inbuf = fnamep;
-			size_t inbytes = fnamelen, outbytes = 255;
+			size_t inbytes = fnamelen, outbytes = FUSENT_MAX_PATH-1;
 
 			if (fuse_flags & O_CREAT) {
 				char stbuf[sizeof(fuse_create_in) + FUSENT_MAX_PATH];
-				char *outbuf = stbuf + sizeof(fuse_create_in);;
+				char *outbuf = stbuf + sizeof(fuse_create_in),
+				     *outbuf2 = outbuf;
 
 				// Convert and then reset the cd
 				iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
 				iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+				size_t utf8len = outbuf - outbuf2;
+
+				// Convert the path to a unix-like path
+				fusent_convert_win_path(outbuf2, &utf8len);
 
 				fuse_create_in *args = stbuf;
 				args->flags = fuse_flags;
 				args->umask = S_IXGRP | S_IXOTH;
 
 				// inode for create() should be inode of parent, apparently
-				//fuse_ll_ops[FUSE_CREAT].func(req, XXX, args);
+				fuse_ino_t par_inode;
+				char *basename;
+				if (fusent_get_parent_inode(outbuf2, &basename, &par_inode) < 0) {
+					err = ENOENT;
+					goto reply_err;
+				}
+				// Move basename into beginning of filename argument to creat()
+				// and null-terminate:
+				memmove(outbuf2, basename, outbuf - basename);
+				outbuf2[outbuf - basename] = '\0';
+
+				// Invoke create!
+				fuse_ll_ops[FUSE_CREAT].func(req, par_inode, args);
 			}
 			else {
 				char stbuf[sizeof(fuse_open_in) + FUSENT_MAX_PATH];
-				char *outbuf = stbuf + sizeof(fuse_open_in);;
+				char *outbuf = stbuf + sizeof(fuse_open_in),
+				     *outbuf2 = outbuf;
 
 				// Convert and then reset the cd
 				iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
 				iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+				size_t utf8len = outbuf - outbuf2;
+
+				// Convert the path to a unix-like path
+				fusent_convert_win_path(outbuf2, &utf8len);
 
 				fuse_open_in *args = stbuf;
 				args->flags = fuse_flags;
 				args->umask = S_IXGRP | S_IXOTH;
 
 				// inode for open() needs to be looked up with lookup()
-				// lookup() takes parent inode and path -- apparently
-				// root inode is always 1 (not sure about this)? Not
-				// sure if lookup can take an absolute path or if it
-				// must be relative.
-				//fuse_ll_ops[FUSE_LOOKUP].func(req, XXX, YYY);
-				//fuse_ll_ops[FUSE_OPEN].func(req, XXX, ZZZ);
+				// lookup() takes parent inode and path.
+				// root inode is always FUSE_ROOT_ID
+
+				fuse_ino_t inode;
+				if (fusent_get_inode(outbuf2, &inode) < 0) {
+					err = ENOENT;
+					goto reply_err;
+				}
+
+				fuse_ll_ops[FUSE_OPEN].func(req, inode, args);
 			}
 			}
 			break;
