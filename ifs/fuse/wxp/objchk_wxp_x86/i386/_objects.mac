@@ -1,0 +1,19 @@
+
+
+386_OBJECTS=\
+ $(OBJ_PATH)\$O\fuseinit.obj \
+ $(OBJ_PATH)\$O\fuseio.obj \
+
+
+_RES_FILE=$(OBJ_PATH)\$O\fuse.res
+
+
+
+# lowercased
+BASEDIR=c:\winddk\7600.16385.1
+OBJECT_ROOT=c:\winddk\7600.16385.1
+MAKEDIR_LOWERCASE=c:\winddk\7600.16385.1\src\filesys\fuse\wxp
+MAKEDIR_RELATIVE_TO_BASEDIR=src\filesys\fuse\wxp
+OBJ_PATH=c:\winddk\7600.16385.1\src\filesys\fuse\wxp
+CONCURRENT_MIDL=0
+CONCURRENT_MANIFEST_BUILD=0
