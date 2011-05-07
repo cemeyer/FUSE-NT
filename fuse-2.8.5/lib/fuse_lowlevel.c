@@ -22,6 +22,7 @@
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <fcntl.h>
+# include <ctype.h>
 
 # define FUSENT_MAX_PATH 256
 #endif /* __CYGWIN__ */
@@ -41,13 +42,13 @@
 // Sets up any data structures the fusent translate layer will need to persist
 // across calls.
 static iconv_t cd_utf16le_to_utf8;
-void fusent_translate_setup()
+void fusent_translate_setup(void)
 {
 	cd_utf16le_to_utf8 = iconv_open("UTF-8//IGNORE", "UTF-16LE");
 }
 
 // Destroys any persistant data structures at shut down.
-void fusent_translate_teardown()
+void fusent_translate_teardown(void)
 {
 	iconv_close(cd_utf16le_to_utf8);
 }
@@ -296,7 +297,7 @@ void fuse_reply_none(fuse_req_t req)
 
 #ifdef __CYGWIN__
 	if (req->response_hijack)
-		*req->response_hijack = { 0 };
+		memset(req->response_hijack, 0, sizeof(struct fuse_out_header));
 	else
 #endif
 		fuse_chan_send(req->ch, NULL, 0);
@@ -1105,6 +1106,8 @@ static void do_interrupt(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	pthread_mutex_unlock(&f->lock);
 }
 
+// This is only used by a Unix-only portion of fuse_ll_process:
+#ifndef __CYGWIN__
 static struct fuse_req *check_interrupt(struct fuse_ll *f, struct fuse_req *req)
 {
 	struct fuse_req *curr;
@@ -1126,6 +1129,7 @@ static struct fuse_req *check_interrupt(struct fuse_ll *f, struct fuse_req *req)
 	} else
 		return NULL;
 }
+#endif /* __CYGWIN__ */
 
 static void do_bmap(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 {
@@ -1490,6 +1494,8 @@ static struct {
 
 #define FUSE_MAXOP (sizeof(fuse_ll_ops) / sizeof(fuse_ll_ops[0]))
 
+// This is only used by a Unix-only part of fuse_ll_process:
+#ifndef __CYGWIN__
 static const char *opname(enum fuse_opcode opcode)
 {
 	if (opcode >= FUSE_MAXOP || !fuse_ll_ops[opcode].name)
@@ -1497,18 +1503,20 @@ static const char *opname(enum fuse_opcode opcode)
 	else
 		return fuse_ll_ops[opcode].name;
 }
+#endif
 
 // Does an in-place conversion of a Windows-formatted buffer to
 // Unix-formatted. Probably buggy.
 static void fusent_convert_win_path(char *buf, size_t *len) {
+	size_t i;
 	// For now:
 	//   1) Replace backslashes with slashes
-	for (size_t i = 0; i < *len; i++) {
+	for (i = 0; i < *len; i++) {
 		if (buf[i] == '\\') buf[i] = '/';
 	}
 
 	//   2) Strip any beginning drive
-	if (*len > 2 && isalpha(buf[0]) && buf[1] == ':') {
+	if (*len > 2 && isalpha((int)buf[0]) && buf[1] == ':') {
 		*len = *len - 2;
 		memmove(buf, &buf[2], *len);
 	}
@@ -1530,6 +1538,7 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 	char *giantbuf = malloc(8192);
 
 	for (;;) {
+		// This is totally fine in UTF-8, by the way:
 		char *nextsl = strchr(fn, '/');
 
 		// If there are no more slashes, we've located the basename and
@@ -1558,10 +1567,10 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 			return out.error;
 		}
 
-		fuse_entry_out *lookuparg = (struct fuse_entry_out *)giantbuf;
+		struct fuse_entry_out *lookuparg = (struct fuse_entry_out *)giantbuf;
 
 		curino = lookuparg->nodeid;
-		*fn = nextsl + 1;
+		fn = nextsl + 1;
 	}
 }
 
@@ -1622,7 +1631,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	list_init_req(req);
 	fuse_mutex_init(&req->lock);
 
-	int status, err;
+	int status;
 	IO_STACK_LOCATION *iosp;
 	uint8_t irptype;
 
@@ -1660,12 +1669,12 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 					&fnamelen, &fnamep);
 
 			// Translate it to UTF8:
-			char *inbuf = fnamep;
+			char *inbuf = (char *)fnamep;
 			size_t inbytes = fnamelen, outbytes = FUSENT_MAX_PATH-1;
 
 			if (fuse_flags & O_CREAT) {
-				char stbuf[sizeof(fuse_create_in) + FUSENT_MAX_PATH];
-				char *outbuf = stbuf + sizeof(fuse_create_in),
+				char stbuf[sizeof(struct fuse_create_in) + FUSENT_MAX_PATH];
+				char *outbuf = stbuf + sizeof(struct fuse_create_in),
 				     *outbuf2 = outbuf;
 
 				// Convert and then reset the cd
@@ -1676,14 +1685,14 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 				// Convert the path to a unix-like path
 				fusent_convert_win_path(outbuf2, &utf8len);
 
-				fuse_create_in *args = stbuf;
+				struct fuse_create_in *args = (struct fuse_create_in *)stbuf;
 				args->flags = fuse_flags;
 				args->umask = S_IXGRP | S_IXOTH;
 
 				// inode for create() should be inode of parent, apparently
 				fuse_ino_t par_inode;
 				char *basename;
-				if (fusent_get_parent_inode(outbuf2, &basename, &par_inode) < 0) {
+				if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
 					err = ENOENT;
 					goto reply_err;
 				}
@@ -1693,11 +1702,11 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 				outbuf2[outbuf - basename] = '\0';
 
 				// Invoke create!
-				fuse_ll_ops[FUSE_CREAT].func(req, par_inode, args);
+				fuse_ll_ops[FUSE_CREATE].func(req, par_inode, args);
 			}
 			else {
-				char stbuf[sizeof(fuse_open_in) + FUSENT_MAX_PATH];
-				char *outbuf = stbuf + sizeof(fuse_open_in),
+				char stbuf[sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
+				char *outbuf = stbuf + sizeof(struct fuse_open_in),
 				     *outbuf2 = outbuf;
 
 				// Convert and then reset the cd
@@ -1708,16 +1717,15 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 				// Convert the path to a unix-like path
 				fusent_convert_win_path(outbuf2, &utf8len);
 
-				fuse_open_in *args = stbuf;
+				struct fuse_open_in *args = (struct fuse_open_in *)stbuf;
 				args->flags = fuse_flags;
-				args->umask = S_IXGRP | S_IXOTH;
 
 				// inode for open() needs to be looked up with lookup()
 				// lookup() takes parent inode and path.
 				// root inode is always FUSE_ROOT_ID
 
 				fuse_ino_t inode;
-				if (fusent_get_inode(outbuf2, &inode) < 0) {
+				if (fusent_get_inode(req, outbuf2, &inode) < 0) {
 					err = ENOENT;
 					goto reply_err;
 				}
@@ -1727,10 +1735,10 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			}
 			break;
 		case IRP_MJ_READ:
-			XXX;
+			// TODO
 			break;
 		case IRP_MJ_WRITE:
-			XXX;
+			// TODO
 			break;
 		default:
 			err = ENOSYS;

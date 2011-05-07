@@ -6,10 +6,10 @@
 
 // Sets up any data structures fusent_translate will need to persist
 // across calls.
-void fusent_translate_setup();
+void fusent_translate_setup(void);
 
 // Destroys any persistant data structures at shut down.
-void fusent_translate_teardown();
+void fusent_translate_teardown(void);
 
 #endif /* FUSENT_TRANSLATE_H */
 #endif /* __CYGWIN__ */
