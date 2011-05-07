@@ -81,6 +81,9 @@ typedef struct _FUSENT_RESP {
 			uint32_t buflen;
 			//uint8_t buf[0]; buf is defined as following the FUSENT_RESP header.
 		} read;
+		struct {
+			uint32_t written;
+		} write;
 		// potentially other kinds of responses here...
 	} params;
 } FUSENT_RESP;

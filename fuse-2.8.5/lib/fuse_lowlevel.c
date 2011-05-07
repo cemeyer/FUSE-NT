@@ -860,6 +860,10 @@ static void do_write(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		param = PARAM(arg);
 	}
 
+#ifdef __CYGWIN__
+	param = req->response_hijack_buf; // abusing the crap out of this, oops
+#endif
+
 	if (req->f->op.write)
 		req->f->op.write(req, nodeid, param, arg->size,
 				 arg->offset, &fi);
@@ -1646,6 +1650,7 @@ static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in) {
 
 static inline void fusent_fill_resp(FUSENT_RESP *resp, PIRP pirp, PFILE_OBJECT fop, int error)
 {
+	memset(resp, 0, sizeof(FUSENT_RESP));
 	resp->pirp = pirp;
 	resp->fop = fop;
 	resp->error = error;
@@ -1666,7 +1671,7 @@ static inline void fusent_sendmsg(fuse_req_t req, FUSENT_RESP *resp, size_t len)
 static void fusent_reply_error(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, int error)
 {
 	FUSENT_RESP resp;
-	fusent_fill_resp(&resp, pirp, fop, error);
+	fusent_fill_resp(&resp, pirp, fop, -error);
 	fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
 }
 
@@ -1674,6 +1679,15 @@ static void fusent_reply_error(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, int 
 static void fusent_reply_create(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop)
 {
 	fusent_reply_error(req, pirp, fop, 0);
+}
+
+// Send a successful response to an IRP_MJ_WRITE irp down to the kernel:
+static void fusent_reply_write(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint32_t written)
+{
+	FUSENT_RESP resp;
+	fusent_fill_resp(&resp, pirp, fop, 0);
+	resp.params.write.written = written;
+	fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
 }
 
 // Send a successful response to an IRP_MJ_READ irp down to the kernel:
@@ -1874,6 +1888,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 			}
 			break;
+
 		case IRP_MJ_READ:
 			{
 			PFILE_OBJECT fop = ntreq->fop;
@@ -1901,7 +1916,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			readargs.size = len;
 			readargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
 
-			fuse_ll_ops[FUSE_READ].func(req, inode, (void *)&readargs);
+			fuse_ll_ops[FUSE_READ].func(req, inode, &readargs);
 
 			req->response_hijack = NULL;
 			req->response_hijack_buf = NULL;
@@ -1919,11 +1934,62 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			free(giantbuf);
 			}
 			break;
+
 		case IRP_MJ_WRITE:
 			{
-			// TODO
+			PFILE_OBJECT fop = ntreq->fop;
+			ULONG len = iosp->Parameters.Write.Length;
+			LARGE_INTEGER off = iosp->Parameters.Write.ByteOffset;
+			
+			// fi and inode get initialized by fusent_fi_inode_from_fop().
+			// Bogus compiler warning. --cemeyer
+			struct fuse_file_info *fi;
+			fuse_ino_t inode;
+			if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
+				err = EBADF;
+				goto reply_err_nt;
+			}
+
+			uint32_t stoutbuf[sizeof(struct fuse_write_out) / sizeof(uint32_t)];
+			uint8_t *outbufp;
+			uint32_t outbuflen;
+			fusent_decode_request_write((FUSENT_WRITE_REQ *)ntreq, &outbuflen, &outbufp);
+
+			struct fuse_out_header outh;
+			req->response_hijack = &outh;
+
+			// If the buffer given us for writing is too small for a fuse_write_out,
+			// point at a stack buffer instead and copy that in.
+			if (outbuflen >= sizeof(struct fuse_write_out)) {
+				req->response_hijack_buf = (char *)outbufp;
+			}
+			else {
+				req->response_hijack_buf = (char *)stoutbuf;
+				memcpy(stoutbuf, outbufp, outbuflen);
+			}
+
+			struct fuse_write_in writeargs;
+			writeargs.fh = fi->fh;
+			writeargs.flags = fi->flags;
+			writeargs.lock_owner = fi->lock_owner;
+			writeargs.size = len;
+			writeargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+
+			fuse_ll_ops[FUSE_WRITE].func(req, inode, &writeargs);
+
+			uint32_t written = ((struct fuse_write_out *)req->response_hijack_buf)->size;
+			req->response_hijack = NULL;
+			req->response_hijack_buf = NULL;
+
+			if (outh.error) {
+				err = -outh.error;
+				goto reply_err_nt;
+			}
+
+			fusent_reply_write(req, ntreq->pirp, ntreq->fop, written);
 			}
 			break;
+
 		default:
 			err = ENOSYS;
 			goto reply_err_nt;
