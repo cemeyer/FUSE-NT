@@ -157,6 +157,7 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 
 	out.unique = req->unique;
 	out.error = error;
+
 	iov[0].iov_base = &out;
 	iov[0].iov_len = sizeof(struct fuse_out_header);
 	out.len = iov_length(iov, count);
@@ -173,6 +174,18 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 				(unsigned long long) out.unique, out.len);
 		}
 	}
+
+#ifdef __CYGWIN__
+	if (req->response_hijack) {
+		*req->response_hijack = out;
+		if (req->response_hijack_buf && count > 1) {
+			size_t len = iov[1].iov_len;
+			if (len > 8192) len = 8192;
+			memcpy(req->response_hijack_buf, iov[1].iov_base, len);
+		}
+		return 0;
+	}
+#endif
 
 	return fuse_chan_send(req->ch, iov, count);
 }
@@ -280,7 +293,13 @@ int fuse_reply_err(fuse_req_t req, int err)
 
 void fuse_reply_none(fuse_req_t req)
 {
-	fuse_chan_send(req->ch, NULL, 0);
+
+#ifdef __CYGWIN__
+	if (req->response_hijack)
+		*req->response_hijack = { 0 };
+	else
+#endif
+		fuse_chan_send(req->ch, NULL, 0);
 	fuse_free_req(req);
 }
 
@@ -1503,13 +1522,12 @@ static void fusent_convert_win_path(char *buf, size_t *len) {
 // Returns negative if the parent can't be found or the path is invalid:
 //      stdint.h -> err
 static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino_t *in) {
-	// TODO(cemeyer) handle relative paths, like, at all
-
 	if (*fn != '/') return -1;
 	if (!req->f->op.lookup) return -1;
 	fn ++;
 
 	fuse_ino_t curino = FUSE_ROOT_ID;
+	char *giantbuf = malloc(8192);
 
 	for (;;) {
 		char *nextsl = strchr(fn, '/');
@@ -1519,30 +1537,50 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 		if (!nextsl) {
 			*bn = fn;
 			*in = curino;
+			free(giantbuf);
 			return 0;
 		}
 
-		return -1; // for now, we can't do lookups because lookup
-		// tries to dispatch and reply and that sort of thing.
-		// root directory stuff should still work.
-
 		// Otherwise, lookup the next component of the path:
 		*nextsl = '\0';
+		struct fuse_out_header out;
+		req->response_hijack = &out;
+		req->response_hijack_buf = giantbuf;
+
 		fuse_ll_ops[FUSE_LOOKUP].func(req, curino, fn);
+
+		req->response_hijack = NULL;
+		req->response_hijack_buf = NULL;
 		*nextsl = '/';
 
-		// TODO get next inode; check for error
+		if (out.error) {
+			free(giantbuf);
+			return out.error;
+		}
 
+		fuse_entry_out *lookuparg = (struct fuse_entry_out *)giantbuf;
+
+		curino = lookuparg->nodeid;
 		*fn = nextsl + 1;
 	}
 }
 
 // Given a path in `fn', locate the inode for `fn'.
 // Returns negative if `fn' can't be found.
-static int fusent_get_inode(char *fn, fuse_ino_t *in) {
-	// depends on lookup working. maybe we need to
-	// decouple the sending and recieving channels?
-	return -1;
+static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in) {
+	char path[FUSENT_MAX_PATH + 3];
+	size_t sl = strlen(fn);
+	memcpy(path, fn, sl);
+
+	// As a giant hack, fusenet_get_parent_inode doesn't care if the last
+	// "parent" component is a directory, so let's just abuse that to
+	// get the inode for now:
+	path[sl]   = '/';
+	path[sl+1] = 'a';
+	path[sl+2] = '\0';
+
+	char *bn;
+	return fusent_get_parent_inode(req, fn, &bn, in);
 }
 
 static void fuse_ll_process(void *data, const char *buf, size_t len,
@@ -1580,6 +1618,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	req->ctx.pid = 0; // what is this used for? maybe need to pass as part of the request --cemeyer
 	req->ch = ch;
 	req->ctr = 1;
+	req->response_hijack = NULL;
 	list_init_req(req);
 	fuse_mutex_init(&req->lock);
 

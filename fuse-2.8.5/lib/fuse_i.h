@@ -41,6 +41,16 @@ struct fuse_req {
 	} u;
 	struct fuse_req *next;
 	struct fuse_req *prev;
+
+#ifdef __CYGWIN__
+	// If this is non-NULL, reply functions should store the
+	// outgoing header at this pointer instead of replying.
+	struct fuse_out_header *response_hijack;
+
+	// If this is non-NULL, it is at least 8kiB in size. Dump
+	// the response here if response_hijack is non-NULL.
+	char *response_hijack_buf;
+#endif
 };
 
 struct fuse_ll {
