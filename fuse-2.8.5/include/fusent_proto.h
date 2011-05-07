@@ -79,7 +79,7 @@ typedef struct _FUSENT_RESP {
 	union {
 		struct {
 			uint32_t buflen;
-			uint8_t buf[0];
+			//uint8_t buf[0]; buf is defined as following the FUSENT_RESP header.
 		} read;
 		// potentially other kinds of responses here...
 	} params;

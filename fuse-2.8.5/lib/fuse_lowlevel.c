@@ -47,36 +47,45 @@
 // and UTF-8 FUSE-hosted filesystem names.
 static iconv_t cd_utf16le_to_utf8;
 
-// Maps between FileObject pointers (fops) and open FUSE file handles (fh):
+// Maps between open FileObject pointers (fops) and fuse_file_info pointers / inode numbers:
 static st_table *fusent_fop_fi_map;
+static st_table *fusent_fop_ino_map;
 
 void fusent_translate_setup()
 {
 	cd_utf16le_to_utf8 = iconv_open("UTF-8//IGNORE", "UTF-16LE");
 	fusent_fop_fi_map = st_init_numtable();
+	fusent_fop_ino_map = st_init_numtable();
 }
 
 // Destroys any persistant data structures at shut down.
 void fusent_translate_teardown()
 {
+	st_free_table(fusent_fop_ino_map);
 	st_free_table(fusent_fop_fi_map);
 	iconv_close(cd_utf16le_to_utf8);
 }
 
 // Add the fh <-> fop mapping to our maps:
-static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi)
+static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino)
 {
 	st_insert(fusent_fop_fi_map, (st_data_t)fop, (st_data_t)fi);
+	st_insert(fusent_fop_ino_map, (st_data_t)fop, (st_data_t)ino);
 }
 
 // Lookup the corresponding file_info pointer for an open file handle (fh).
 // Negative on error, zero on success.
-static inline int fusent_fi_from_fop(PFILE_OBJECT fop, struct fuse_file_info **fi_out)
+static inline int fusent_fi_inode_from_fop(PFILE_OBJECT fop, struct fuse_file_info **fi_out, fuse_ino_t *ino_out)
 {
 	int res;
-	st_data_t rfi;
+	st_data_t rfi, rino;
+
 	res = st_lookup(fusent_fop_fi_map, (st_data_t)fop, &rfi) - 1;
 	if (!res) *fi_out = (struct fuse_file_info *)rfi;
+	else return res;
+
+	res = st_lookup(fusent_fop_ino_map, (st_data_t)fop, &rino) - 1;
+	if (!res) *ino_out = (fuse_ino_t)rino;
 	return res;
 }
 
@@ -84,12 +93,16 @@ static inline int fusent_fi_from_fop(PFILE_OBJECT fop, struct fuse_file_info **f
 static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 {
 	struct fuse_file_info *rfi;
-	if (fusent_fi_from_fop(fop, &rfi) < 0) return;
+	fuse_ino_t ino;
+	if (fusent_fi_inode_from_fop(fop, &rfi, &ino) < 0) return;
 
 	free(rfi);
 
 	st_data_t irfop = (st_data_t)fop;
 	st_delete(fusent_fop_fi_map, &irfop, NULL);
+
+	irfop = (st_data_t)fop;
+	st_delete(fusent_fop_ino_map, &irfop, NULL);
 }
 #endif /* __CYGWIN__ */
 
@@ -219,7 +232,7 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 		*req->response_hijack = out;
 		if (req->response_hijack_buf && count > 1) {
 			size_t len = iov[1].iov_len;
-			if (len > 8192) len = 8192;
+			// TODO: ensure that buf is large enough to handle the iov.
 			memcpy(req->response_hijack_buf, iov[1].iov_base, len);
 		}
 		return 0;
@@ -1662,6 +1675,17 @@ static void fusent_reply_create(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop)
 {
 	fusent_reply_error(req, pirp, fop, 0);
 }
+
+// Send a successful response to an IRP_MJ_READ irp down to the kernel:
+// buf should have space for a FUSENT_RESP at the beginning.
+// buflen includes this.
+static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint32_t buflen, char *buf)
+{
+	FUSENT_RESP *resp = (FUSENT_RESP *)buf;
+	fusent_fill_resp(resp, pirp, fop, 0);
+	resp->params.read.buflen = buflen - sizeof(FUSENT_RESP);
+	fusent_sendmsg(req, resp, buflen);
+}
 #endif /* __CYGWIN__ */
 
 static void fuse_ll_process(void *data, const char *buf, size_t len,
@@ -1748,6 +1772,9 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			fuse_ino_t llinode;
 			int llop;
 
+			// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
+			fuse_ino_t fino;
+
 			if (fuse_flags & O_CREAT) {
 				char stbuf[sizeof(struct fuse_create_in) + FUSENT_MAX_PATH];
 				char *outbuf = stbuf + sizeof(struct fuse_create_in),
@@ -1808,6 +1835,8 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 					goto reply_err_nt;
 				}
 
+				fino = inode;
+
 				llop = FUSE_OPEN;
 				llinode = inode;
 				llargs = (char *)args;
@@ -1831,15 +1860,17 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			}
 
 			struct fuse_open_out *openresp = (struct fuse_open_out *)giantbuf;
-			if (llop == FUSE_CREATE)
+			if (llop == FUSE_CREATE) {
 				openresp = (struct fuse_open_out *)(giantbuf + sizeof(struct fuse_entry_out));
+				fino = ((struct fuse_entry_out *)giantbuf)->nodeid;
+			}
 
 			struct fuse_file_info *fi = malloc(sizeof(struct fuse_file_info));
 			fi->fh = openresp->fh;
 			fi->flags = openresp->open_flags;
 			free(giantbuf);
 
-			fusent_add_fop_mapping(ntreq->fop, fi);
+			fusent_add_fop_mapping(ntreq->fop, fi, fino);
 			fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 			}
 			break;
@@ -1849,22 +1880,42 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			ULONG len = iosp->Parameters.Read.Length;
 			LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
 			
+			// Likewise, fi and inode get initialized by fusent_fi_inode_from_fop().
+			// Bogus compiler warning. --cemeyer
 			struct fuse_file_info *fi;
-			if (fusent_fi_from_fop(fop, &fi) < 0) {
+			fuse_ino_t inode;
+			if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
 				err = EBADF;
 				goto reply_err_nt;
 			}
 
 			struct fuse_out_header outh;
-			char *giantbuf = malloc(8192);
+			char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
 			req->response_hijack = &outh;
-			req->response_hijack_buf = giantbuf;
+			req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
 
-			// TODO fill in FUSE_READ args, call function, interpret results, pass buf or error back to kernel
-			//fuse_ll_ops[FUSE_READ].func(req, XXX, YYY);
+			struct fuse_read_in readargs;
+			readargs.fh = fi->fh;
+			readargs.flags = fi->flags;
+			readargs.lock_owner = fi->lock_owner;
+			readargs.size = len;
+			readargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+
+			fuse_ll_ops[FUSE_READ].func(req, inode, (void *)&readargs);
 
 			req->response_hijack = NULL;
 			req->response_hijack_buf = NULL;
+
+			if (outh.error) {
+				free(giantbuf);
+				err = -outh.error;
+				goto reply_err_nt;
+			}
+
+			fusent_reply_read(req, ntreq->pirp, ntreq->fop,
+					outh.len - sizeof(struct fuse_out_header) + sizeof(FUSENT_RESP),
+					giantbuf);
+
 			free(giantbuf);
 			}
 			break;
