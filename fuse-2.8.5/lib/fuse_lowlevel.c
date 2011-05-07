@@ -16,6 +16,7 @@
 #ifdef __CYGWIN__
 # include "fusent_proto.h"
 # include "fusent_irpdecode.h"
+# include "st.h"
 
 # include <iconv.h>
 
@@ -41,16 +42,54 @@
 #ifdef __CYGWIN__
 // Sets up any data structures the fusent translate layer will need to persist
 // across calls.
+
+// Conversion descriptor for iconv; used to convert between UTF-16LE Windows filenames
+// and UTF-8 FUSE-hosted filesystem names.
 static iconv_t cd_utf16le_to_utf8;
-void fusent_translate_setup(void)
+
+// Maps between FileObject pointers (fops) and open FUSE file handles (fh):
+static st_table *fusent_fop_fi_map;
+
+void fusent_translate_setup()
 {
 	cd_utf16le_to_utf8 = iconv_open("UTF-8//IGNORE", "UTF-16LE");
+	fusent_fop_fi_map = st_init_numtable();
 }
 
 // Destroys any persistant data structures at shut down.
-void fusent_translate_teardown(void)
+void fusent_translate_teardown()
 {
+	st_free_table(fusent_fop_fi_map);
 	iconv_close(cd_utf16le_to_utf8);
+}
+
+// Add the fh <-> fop mapping to our maps:
+static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi)
+{
+	st_insert(fusent_fop_fi_map, (st_data_t)fop, (st_data_t)fi);
+}
+
+// Lookup the corresponding file_info pointer for an open file handle (fh).
+// Negative on error, zero on success.
+static inline int fusent_fi_from_fop(PFILE_OBJECT fop, struct fuse_file_info **fi_out)
+{
+	int res;
+	st_data_t rfi;
+	res = st_lookup(fusent_fop_fi_map, (st_data_t)fop, &rfi) - 1;
+	if (!res) *fi_out = (struct fuse_file_info *)rfi;
+	return res;
+}
+
+// Removes a fop mapping
+static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
+{
+	struct fuse_file_info *rfi;
+	if (fusent_fi_from_fop(fop, &rfi) < 0) return;
+
+	free(rfi);
+
+	st_data_t irfop = (st_data_t)fop;
+	st_delete(fusent_fop_fi_map, &irfop, NULL);
 }
 #endif /* __CYGWIN__ */
 
@@ -145,7 +184,6 @@ void fuse_free_req(fuse_req_t req)
 		destroy_req(req);
 }
 
-// TODO(cemeyer) Change this function to use the FUSENT responses.
 int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 			       int count)
 {
@@ -1505,6 +1543,7 @@ static const char *opname(enum fuse_opcode opcode)
 }
 #endif
 
+#ifdef __CYGWIN__
 // Does an in-place conversion of a Windows-formatted buffer to
 // Unix-formatted. Probably buggy.
 static void fusent_convert_win_path(char *buf, size_t *len) {
@@ -1592,6 +1631,39 @@ static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in) {
 	return fusent_get_parent_inode(req, fn, &bn, in);
 }
 
+static inline void fusent_fill_resp(FUSENT_RESP *resp, PIRP pirp, PFILE_OBJECT fop, int error)
+{
+	resp->pirp = pirp;
+	resp->fop = fop;
+	resp->error = error;
+}
+
+// Sends a response to the kernel. len is not always == sizeof(FUSENT_RESP),
+// so we need to take a parameter.
+static inline void fusent_sendmsg(fuse_req_t req, FUSENT_RESP *resp, size_t len)
+{
+	struct iovec iov;
+	iov.iov_base = resp;
+	iov.iov_len = len;
+
+	fuse_chan_send(req->ch, &iov, 1);
+}
+
+// Send an error reply back to the kernel:
+static void fusent_reply_error(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, int error)
+{
+	FUSENT_RESP resp;
+	fusent_fill_resp(&resp, pirp, fop, error);
+	fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
+}
+
+// Send a successful response to an IRP_MJ_CREATE irp down to the kernel:
+static void fusent_reply_create(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop)
+{
+	fusent_reply_error(req, pirp, fop, 0);
+}
+#endif /* __CYGWIN__ */
+
 static void fuse_ll_process(void *data, const char *buf, size_t len,
 			    struct fuse_chan *ch)
 {
@@ -1638,7 +1710,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	err = EIO;
 
 	status = fusent_decode_irp(&ntreq->irp, &ntreq->iostack[0], &irptype, &iosp);
-	if (status < 0) goto reply_err;
+	if (status < 0) goto reply_err_nt;
 
 	switch (irptype) {
 		case IRP_MJ_CREATE:
@@ -1672,6 +1744,10 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			char *inbuf = (char *)fnamep;
 			size_t inbytes = fnamelen, outbytes = FUSENT_MAX_PATH-1;
 
+			char *llargs;
+			fuse_ino_t llinode;
+			int llop;
+
 			if (fuse_flags & O_CREAT) {
 				char stbuf[sizeof(struct fuse_create_in) + FUSENT_MAX_PATH];
 				char *outbuf = stbuf + sizeof(struct fuse_create_in),
@@ -1694,7 +1770,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 				char *basename;
 				if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
 					err = ENOENT;
-					goto reply_err;
+					goto reply_err_nt;
 				}
 				// Move basename into beginning of filename argument to creat()
 				// and null-terminate:
@@ -1702,7 +1778,9 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 				outbuf2[outbuf - basename] = '\0';
 
 				// Invoke create!
-				fuse_ll_ops[FUSE_CREATE].func(req, par_inode, args);
+				llop = FUSE_CREATE;
+				llinode = par_inode;
+				llargs = (char *)args;
 			}
 			else {
 				char stbuf[sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
@@ -1727,23 +1805,82 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 				fuse_ino_t inode;
 				if (fusent_get_inode(req, outbuf2, &inode) < 0) {
 					err = ENOENT;
-					goto reply_err;
+					goto reply_err_nt;
 				}
 
-				fuse_ll_ops[FUSE_OPEN].func(req, inode, args);
+				llop = FUSE_OPEN;
+				llinode = inode;
+				llargs = (char *)args;
 			}
+
+			struct fuse_out_header outh;
+			char *giantbuf = malloc(8192);
+			req->response_hijack = &outh;
+			req->response_hijack_buf = giantbuf;
+
+			fuse_ll_ops[llop].func(req, llinode, llargs);
+
+			req->response_hijack = NULL;
+			req->response_hijack_buf = NULL;
+
+			if (outh.error) {
+				// outh.error will be >= -1000 and <= 0:
+				err = -outh.error;
+				free(giantbuf);
+				goto reply_err_nt;
+			}
+
+			struct fuse_open_out *openresp = (struct fuse_open_out *)giantbuf;
+			if (llop == FUSE_CREATE)
+				openresp = (struct fuse_open_out *)(giantbuf + sizeof(struct fuse_entry_out));
+
+			struct fuse_file_info *fi = malloc(sizeof(struct fuse_file_info));
+			fi->fh = openresp->fh;
+			fi->flags = openresp->open_flags;
+			free(giantbuf);
+
+			fusent_add_fop_mapping(ntreq->fop, fi);
+			fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 			}
 			break;
 		case IRP_MJ_READ:
-			// TODO
+			{
+			PFILE_OBJECT fop = ntreq->fop;
+			ULONG len = iosp->Parameters.Read.Length;
+			LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
+			
+			struct fuse_file_info *fi;
+			if (fusent_fi_from_fop(fop, &fi) < 0) {
+				err = EBADF;
+				goto reply_err_nt;
+			}
+
+			struct fuse_out_header outh;
+			char *giantbuf = malloc(8192);
+			req->response_hijack = &outh;
+			req->response_hijack_buf = giantbuf;
+
+			// TODO fill in FUSE_READ args, call function, interpret results, pass buf or error back to kernel
+			//fuse_ll_ops[FUSE_READ].func(req, XXX, YYY);
+
+			req->response_hijack = NULL;
+			req->response_hijack_buf = NULL;
+			free(giantbuf);
+			}
 			break;
 		case IRP_MJ_WRITE:
+			{
 			// TODO
+			}
 			break;
 		default:
 			err = ENOSYS;
-			goto reply_err;
+			goto reply_err_nt;
 	}
+	return;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 #else
 	struct fuse_in_header *in = (struct fuse_in_header *) buf;
 	const void *inarg = buf + sizeof(struct fuse_in_header);
@@ -1803,10 +1940,10 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	}
 	fuse_ll_ops[in->opcode].func(req, in->nodeid, inarg);
 	return;
-#endif
 
 reply_err:
 	fuse_reply_err(req, err);
+#endif
 }
 
 enum {
@@ -1956,7 +2093,7 @@ struct fuse_session *fuse_lowlevel_new(struct fuse_args *args,
 	return fuse_lowlevel_new_common(args, op, op_size, userdata);
 }
 
-#ifdef linux
+#if defined(linux) && !defined(__CYGWIN__)
 int fuse_req_getgroups(fuse_req_t req, int size, gid_t list[])
 {
 	char *buf;

@@ -74,15 +74,15 @@ typedef struct _FUSENT_MOUNT { // weird special-case "response"
 typedef struct _FUSENT_RESP {
 	PIRP pirp;
 	PFILE_OBJECT fop;
-	int retval; // all high-level fuse operations return int
-		    // negative is error (-errno); non-negative is OK
+	int error; // all high-level fuse operations return int
+		   // negative is error (-errno); zero is OK
 	union {
 		struct {
 			uint32_t buflen;
 			uint8_t buf[0];
 		} read;
 		// potentially other kinds of responses here...
-	} extradata;
+	} params;
 } FUSENT_RESP;
 
 #endif /* NTPROTO_H */
