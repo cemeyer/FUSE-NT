@@ -232,8 +232,13 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 		*req->response_hijack = out;
 		if (req->response_hijack_buf && count > 1) {
 			size_t len = iov[1].iov_len;
-			// TODO: ensure that buf is large enough to handle the iov.
+
+			// Ensure that buf is large enough to hold iov (copy as much as we can):
+			if (len > req->response_hijack_buflen) len = req->response_hijack_buflen;
 			memcpy(req->response_hijack_buf, iov[1].iov_base, len);
+
+			// Report a possible short write:
+			req->response_hijack_buflen = iov[1].iov_len;
 		}
 		return 0;
 	}
@@ -1590,8 +1595,12 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 	if (!req->f->op.lookup) return -1;
 	fn ++;
 
+	// Massive overkill for a LOOKUP, oh well.
+	// TODO(cemeyer): Make minimal size for LOOKUP calls.
+	const size_t buflen = 8192;
+
 	fuse_ino_t curino = FUSE_ROOT_ID;
-	char *giantbuf = malloc(8192);
+	char *giantbuf = malloc(buflen);
 
 	for (;;) {
 		// This is totally fine in UTF-8, by the way:
@@ -1611,6 +1620,7 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 		struct fuse_out_header out;
 		req->response_hijack = &out;
 		req->response_hijack_buf = giantbuf;
+		req->response_hijack_buflen = buflen;
 
 		fuse_ll_ops[FUSE_LOOKUP].func(req, curino, fn);
 
@@ -1857,9 +1867,15 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			}
 
 			struct fuse_out_header outh;
-			char *giantbuf = malloc(8192);
+
+			// I'm sure this is overkill for CREATE/OPEN.
+			// TODO(cemeyer) make minimal size
+			const size_t buflen = 8192;
+
+			char *giantbuf = malloc(buflen);
 			req->response_hijack = &outh;
 			req->response_hijack_buf = giantbuf;
+			req->response_hijack_buflen = buflen;
 
 			fuse_ll_ops[llop].func(req, llinode, llargs);
 
@@ -1908,6 +1924,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
 			req->response_hijack = &outh;
 			req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
+			req->response_hijack_buflen = len;
 
 			struct fuse_read_in readargs;
 			readargs.fh = fi->fh;
@@ -1962,9 +1979,11 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 			// point at a stack buffer instead and copy that in.
 			if (outbuflen >= sizeof(struct fuse_write_out)) {
 				req->response_hijack_buf = (char *)outbufp;
+				req->response_hijack_buflen = outbuflen;
 			}
 			else {
 				req->response_hijack_buf = (char *)stoutbuf;
+				req->response_hijack_buflen = sizeof(struct fuse_write_out);
 				memcpy(stoutbuf, outbufp, outbuflen);
 			}
 

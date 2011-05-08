@@ -212,8 +212,6 @@ static struct fuse_chan *fuse_mount_common(const char *mountpoint,
 	if (fd == -1)
 		return NULL;
 
-	// TODO: #ifdef fuse_kern_chan_new to use a HANDLE on __CYGWIN__ and
-	// int everywhere else
 	ch = fuse_kern_chan_new(fd);
 	if (!ch)
 		fuse_kern_unmount(mountpoint, fd);

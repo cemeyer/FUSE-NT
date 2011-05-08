@@ -567,9 +567,6 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	if (mo.mtab_opts &&  fuse_opt_add_opt(&mnt_opts, mo.mtab_opts) == -1)
 		goto out;
 
-	// TODO: Make fuse_mount_sys return a HANDLE in the __CYGWIN__ case;
-	// then we can throw that into our fuse_chan in fuse_mount_common
-	// (which calls this).
 	res = fuse_mount_sys(mountpoint, &mo, mnt_opts);
 	if (res == -2) {
 		if (mo.fusermount_opts &&

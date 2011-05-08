@@ -47,9 +47,10 @@ struct fuse_req {
 	// outgoing header at this pointer instead of replying.
 	struct fuse_out_header *response_hijack;
 
-	// If this is non-NULL, it is at least 8kiB in size. Dump
-	// the response here if response_hijack is non-NULL.
+	// If this is non-NULL, and pesponse_hijack is non-NULL,
+	// dump the response here.
 	char *response_hijack_buf;
+	size_t response_hijack_buflen;
 #endif
 };
 
