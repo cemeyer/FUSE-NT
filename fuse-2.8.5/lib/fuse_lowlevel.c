@@ -1595,12 +1595,10 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 	if (!req->f->op.lookup) return -1;
 	fn ++;
 
-	// Massive overkill for a LOOKUP, oh well.
-	// TODO(cemeyer): Make minimal size for LOOKUP calls.
-	const size_t buflen = 8192;
+	const size_t buflen = sizeof(struct fuse_entry_out);
 
 	fuse_ino_t curino = FUSE_ROOT_ID;
-	char *giantbuf = malloc(buflen);
+	char *hijackbuf = malloc(buflen);
 
 	for (;;) {
 		// This is totally fine in UTF-8, by the way:
@@ -1611,7 +1609,7 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 		if (!nextsl) {
 			*bn = fn;
 			*in = curino;
-			free(giantbuf);
+			free(hijackbuf);
 			return 0;
 		}
 
@@ -1619,7 +1617,7 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 		*nextsl = '\0';
 		struct fuse_out_header out;
 		req->response_hijack = &out;
-		req->response_hijack_buf = giantbuf;
+		req->response_hijack_buf = hijackbuf;
 		req->response_hijack_buflen = buflen;
 
 		fuse_ll_ops[FUSE_LOOKUP].func(req, curino, fn);
@@ -1629,11 +1627,11 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 		*nextsl = '/';
 
 		if (out.error) {
-			free(giantbuf);
+			free(hijackbuf);
 			return out.error;
 		}
 
-		struct fuse_entry_out *lookuparg = (struct fuse_entry_out *)giantbuf;
+		struct fuse_entry_out *lookuparg = (struct fuse_entry_out *)hijackbuf;
 
 		curino = lookuparg->nodeid;
 		fn = nextsl + 1;
@@ -1868,9 +1866,10 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 
 			struct fuse_out_header outh;
 
-			// I'm sure this is overkill for CREATE/OPEN.
-			// TODO(cemeyer) make minimal size
-			const size_t buflen = 8192;
+			// OPEN => fuse_open_out;
+			// CREATE => fuse_entry_out + fuse_open_out
+			const size_t buflen = sizeof(struct fuse_entry_out) +
+				sizeof(struct fuse_open_out);
 
 			char *giantbuf = malloc(buflen);
 			req->response_hijack = &outh;
