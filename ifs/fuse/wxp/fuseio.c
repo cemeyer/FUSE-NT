@@ -38,7 +38,7 @@ FuseFsdFileSystemControl (
 
     DbgPrint("FuseFsdFileSystemControl\n");
 
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 
@@ -53,7 +53,7 @@ FuseFsdCleanup (
 
     DbgPrint("FuseFsdCleanup\n");
 
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -66,7 +66,7 @@ FuseFsdClose (
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdClose\n");
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -79,7 +79,7 @@ FuseFsdCreate (
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdCreate\n");
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -92,7 +92,7 @@ FuseFsdRead (
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdRead\n");
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -105,7 +105,7 @@ FuseFsdWrite (
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdWrite\n");
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -116,7 +116,7 @@ FuseFsdDeviceControl (
 {
     DbgPrint("FuseFsdDeviceControl\n");
 
-	return STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -125,7 +125,8 @@ FuseFsdDirectoryControl (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdDirectoryControl\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -134,7 +135,8 @@ FuseFsdQueryEa (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdQueryEa\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -143,7 +145,8 @@ FuseFsdSetEa (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdSetEa\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -152,7 +155,8 @@ FuseFsdQueryInformation (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdQueryInformation\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -161,7 +165,8 @@ FuseFsdSetInformation (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdSetInformation\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -170,7 +175,8 @@ FuseFsdFlushBuffers (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdFlushBuffers\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -179,7 +185,8 @@ FuseFsdLockControl (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdLockControl\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -188,7 +195,8 @@ FuseFsdPnp (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdPnp\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -197,7 +205,8 @@ FuseFsdShutdown (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdShutdown\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -206,7 +215,8 @@ FuseFsdQueryVolumeInformation (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdQueryVolumeInformation\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -215,7 +225,8 @@ FuseFsdSetVolumeInformation (
     IN PIRP Irp
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseFsdSetVolumeInformation\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -224,7 +235,8 @@ FuseCommonCleanup (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonCleanup\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -236,7 +248,8 @@ FuseCommonClose (
     OUT PBOOLEAN VcbDeleted OPTIONAL
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonClose\n");
+    return STATUS_SUCCESS;
 }
 
 VOID
@@ -244,7 +257,7 @@ FuseFspClose (
     IN PVCB Vcb OPTIONAL
     )
 {
-
+    DbgPrint("FuseFspClose\n");
 }
 
 NTSTATUS
@@ -253,7 +266,8 @@ FuseCommonCreate (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonCreate\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -262,7 +276,8 @@ FuseCommonDirectoryControl (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonDirectoryControl\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -271,7 +286,8 @@ FuseCommonDeviceControl (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonDeviceControl\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -280,7 +296,8 @@ FuseCommonQueryEa (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonQueryEa\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -289,7 +306,8 @@ FuseCommonSetEa (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonSetEa\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -298,7 +316,8 @@ FuseCommonQueryInformation (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonQueryInformation\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -307,7 +326,8 @@ FuseCommonSetInformation (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonSetInformation\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -316,7 +336,8 @@ FuseCommonFlushBuffers (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonFlushBuffers\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -325,7 +346,8 @@ FuseCommonFileSystemControl (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonFileSystemControl\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -334,7 +356,8 @@ FuseCommonLockControl (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonLockControl\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -343,7 +366,8 @@ FuseCommonPnp (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonPnp\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -352,7 +376,8 @@ FuseCommonRead (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonRead\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -361,7 +386,8 @@ FuseCommonShutdown (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonShutdown\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -370,7 +396,8 @@ FuseCommonQueryVolumeInfo (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonQueryVolumeInfo\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -379,7 +406,8 @@ FuseCommonSetVolumeInfo (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonSetVolumeInfo\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -388,7 +416,8 @@ FuseCommonWrite (
     IN PIRP Irp
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseCommonWrite\n");
+    return STATUS_SUCCESS;
 }
 
 BOOLEAN
@@ -403,7 +432,8 @@ FuseFastIoCheckIfPossible (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastIoCheckIfPossible\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -415,7 +445,8 @@ FuseFastQueryBasicInfo (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastQueryBasicInfo\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -427,7 +458,8 @@ FuseFastQueryStdInfo (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastQueryStdInfo\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -439,7 +471,8 @@ FuseFastQueryNetworkOpenInfo (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastQueryNetworkOpenInfo\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -455,7 +488,8 @@ FuseFastLock (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastLock\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -469,7 +503,8 @@ FuseFastUnlockSingle (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastUnlockSingle\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -480,7 +515,8 @@ FuseFastUnlockAll (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastUnlockAll\n");
+    return TRUE;
 }
 
 BOOLEAN
@@ -492,7 +528,8 @@ FuseFastUnlockAllByKey (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return TRUE;
+    DbgPrint("FuseFastUnlockAllByKey\n");
+    return TRUE;
 }
 
 NTSTATUS
@@ -501,7 +538,8 @@ FuseAcquireForCcFlush (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-    return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseAcquireForCcFlush\n");
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -510,6 +548,7 @@ FuseReleaseForCcFlush (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-	return STATUS_CLEANER_CARTRIDGE_INSTALLED;
+    DbgPrint("FuseReleaseForCcFlush\n");
+    return STATUS_SUCCESS;
 }
 
