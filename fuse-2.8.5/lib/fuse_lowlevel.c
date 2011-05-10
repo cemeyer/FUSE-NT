@@ -1977,11 +1977,24 @@ reply_err_nt:
 // Handle an IRP_MJ_DIRECTORY_CONTROL request
 static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
-	// RelatedFileObject to the directory we actually care about:
-	PFILE_OBJECT relatedfop = ntreq->fop;
+	// For more info on these params, see the MSDN on IRP_MJ_DIRECTORY_CONTROL:
+	// http://msdn.microsoft.com/en-us/library/ff548658(v=vs.85).aspx
 	EXTENDED_IO_STACK_LOCATION *irpsp = (EXTENDED_IO_STACK_LOCATION *)iosp;
-	ULONG len = irpsp->Parameters.NotifyDirectory.Length;
-	int err = ENOSYS;
+	UCHAR flags = irpsp->Flags;
+
+	int err;
+
+	if (irpsp->MinorFunction != IRP_MN_QUERY_DIRECTORY) {
+		err = ENOSYS;
+		goto reply_err_nt;
+	}
+
+	ULONG len = irpsp->Parameters.QueryDirectory.Length;
+	FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
+	UNICODE_STRING *fn = irpsp->Parameters.QueryDirectory.FileName;
+
+	// TODO(cemeyer) when we want directory listings to work
+	err = ENOSYS;
 	goto reply_err_nt;
 
 reply_err_nt:
