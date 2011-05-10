@@ -18,6 +18,8 @@
 # include "fusent_irpdecode.h"
 # include "st.h"
 
+# include <ddk/ntifs.h>
+
 # include <iconv.h>
 
 # include <sys/types.h>
@@ -1743,7 +1745,7 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 
 	char *llargs;
 	fuse_ino_t llinode;
-	int llop;
+	int llop, err;
 
 	// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
 	fuse_ino_t fino;
@@ -1852,6 +1854,10 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 
 	fusent_add_fop_mapping(ntreq->fop, fi, fino);
 	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
+	return;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
 // Handle an IRP_MJ_READ request
@@ -1860,6 +1866,7 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 	PFILE_OBJECT fop = ntreq->fop;
 	ULONG len = iosp->Parameters.Read.Length;
 	LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
+	int err;
 
 	// Likewise, fi and inode get initialized by fusent_fi_inode_from_fop().
 	// Bogus compiler warning. --cemeyer
@@ -1899,6 +1906,10 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 			giantbuf);
 
 	free(giantbuf);
+	return;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
 // Handle an IRP_MJ_WRITE request
@@ -1907,6 +1918,7 @@ static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 	PFILE_OBJECT fop = ntreq->fop;
 	ULONG len = iosp->Parameters.Write.Length;
 	LARGE_INTEGER off = iosp->Parameters.Write.ByteOffset;
+	int err;
 
 	// fi and inode get initialized by fusent_fi_inode_from_fop().
 	// Bogus compiler warning. --cemeyer
@@ -1956,6 +1968,10 @@ static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 	}
 
 	fusent_reply_write(req, ntreq->pirp, ntreq->fop, written);
+	return;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
 // Handle an IRP_MJ_DIRECTORY_CONTROL request
@@ -1963,10 +1979,36 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 {
 	// RelatedFileObject to the directory we actually care about:
 	PFILE_OBJECT relatedfop = ntreq->fop;
-	ULONG len = iosp->Parameters.NotifyDirectory.Length;
+	EXTENDED_IO_STACK_LOCATION *irpsp = (EXTENDED_IO_STACK_LOCATION *)iosp;
+	ULONG len = irpsp->Parameters.NotifyDirectory.Length;
+	int err = ENOSYS;
+	goto reply_err_nt;
 
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
+// Initialize FUSE (HACK)
+static void fusent_do_init(struct fuse_ll *f)
+{
+	// TODO(cemeyer) call do_init or whatever fuse calls. low priority.
+
+	f->got_init = 1;
+
+	// stolen from the 2.6.38 kernel
+	f->conn.proto_major = 7;
+	f->conn.proto_minor = 16;
+
+	f->conn.capable = 0;
+	f->conn.want = 0;
+	f->conn.async_read = 0;
+	if (f->op.init) f->op.init(f->userdata, &f->conn);
+
+	// This might be good enough:
+	f->conn.max_write = 8192;
+}
+
+// Handle incoming FUSE-NT protocol messages:
 static void fusent_ll_process(void *data, const char *buf, size_t len,
 		struct fuse_chan *ch)
 {
@@ -1983,16 +2025,7 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 	}
 
 	if (!f->got_init) {
-		// TODO(cemeyer) call do_init or whatever fuse calls instead of this.
-		// Do FUSE init:
-		f->got_init = 1;
-		f->conn.proto_major = 7; // stolen from the 2.6.38 kernel
-		f->conn.proto_minor = 16;
-		f->conn.capable = 0;
-		f->conn.want = 0;
-		f->conn.async_read = 0;
-		if (f->op.init) f->op.init(f->userdata, &f->conn);
-		f->conn.max_write = 8192; // This should be good enough
+		fusent_do_init(f);
 	}
 
 	req->f = f;
@@ -2113,7 +2146,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 reply_err:
 	fuse_reply_err(req, err);
 }
-#else /* !__CYGWIN__ */
+#endif /* !__CYGWIN__ */
 
 enum {
 	KEY_HELP,
