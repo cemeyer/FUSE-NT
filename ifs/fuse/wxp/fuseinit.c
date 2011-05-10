@@ -136,19 +136,19 @@ Return Value:
 
     RtlZeroMemory(&FuseFastIoDispatch, sizeof(FuseFastIoDispatch));
 
-    FuseFastIoDispatch.SizeOfFastIoDispatch =    sizeof(FAST_IO_DISPATCH);
-    FuseFastIoDispatch.FastIoCheckIfPossible =   FuseFastIoCheckIfPossible;  //  CheckForFastIo
-    FuseFastIoDispatch.FastIoRead =              FsRtlCopyRead;             //  Read
-    FuseFastIoDispatch.FastIoWrite =             FsRtlCopyWrite;            //  Write
-    FuseFastIoDispatch.FastIoQueryBasicInfo =    FuseFastQueryBasicInfo;     //  QueryBasicInfo
-    FuseFastIoDispatch.FastIoQueryStandardInfo = FuseFastQueryStdInfo;       //  QueryStandardInfo
-    FuseFastIoDispatch.FastIoLock =              FuseFastLock;               //  Lock
-    FuseFastIoDispatch.FastIoUnlockSingle =      FuseFastUnlockSingle;       //  UnlockSingle
-    FuseFastIoDispatch.FastIoUnlockAll =         FuseFastUnlockAll;          //  UnlockAll
-    FuseFastIoDispatch.FastIoUnlockAllByKey =    FuseFastUnlockAllByKey;     //  UnlockAllByKey
+    FuseFastIoDispatch.SizeOfFastIoDispatch =       sizeof(FAST_IO_DISPATCH);
+    FuseFastIoDispatch.FastIoCheckIfPossible =      FuseFastIoCheckIfPossible;  //  CheckForFastIo
+    FuseFastIoDispatch.FastIoRead =                 FsRtlCopyRead;             //  Read
+    FuseFastIoDispatch.FastIoWrite =                FsRtlCopyWrite;            //  Write
+    FuseFastIoDispatch.FastIoQueryBasicInfo =       FuseFastQueryBasicInfo;     //  QueryBasicInfo
+    FuseFastIoDispatch.FastIoQueryStandardInfo =    FuseFastQueryStdInfo;       //  QueryStandardInfo
+    FuseFastIoDispatch.FastIoLock =                 FuseFastLock;               //  Lock
+    FuseFastIoDispatch.FastIoUnlockSingle =         FuseFastUnlockSingle;       //  UnlockSingle
+    FuseFastIoDispatch.FastIoUnlockAll =            FuseFastUnlockAll;          //  UnlockAll
+    FuseFastIoDispatch.FastIoUnlockAllByKey =       FuseFastUnlockAllByKey;     //  UnlockAllByKey
     FuseFastIoDispatch.FastIoQueryNetworkOpenInfo = FuseFastQueryNetworkOpenInfo;
-    FuseFastIoDispatch.AcquireForCcFlush =       FuseAcquireForCcFlush;
-    FuseFastIoDispatch.ReleaseForCcFlush =       FuseReleaseForCcFlush;
+    FuseFastIoDispatch.AcquireForCcFlush =          FuseAcquireForCcFlush;
+    FuseFastIoDispatch.ReleaseForCcFlush =          FuseReleaseForCcFlush;
 
     //
     //  Register the file system with the I/O system

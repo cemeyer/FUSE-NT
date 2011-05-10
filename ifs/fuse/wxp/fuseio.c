@@ -216,7 +216,7 @@ FuseFsdQueryVolumeInformation (
     )
 {
     DbgPrint("FuseFsdQueryVolumeInformation\n");
-    return STATUS_SUCCESS;
+    return FuseCommonQueryVolumeInfo(Irp);
 }
 
 NTSTATUS
@@ -392,12 +392,144 @@ FuseCommonShutdown (
 
 NTSTATUS
 FuseCommonQueryVolumeInfo (
-    IN PIRP_CONTEXT IrpContext,
+    // IN PIRP_CONTEXT IrpContext, -- Not sure where IRP_CONTEXTs come from yet. Not needed for current implementation anyways. Remove note in header file.
     IN PIRP Irp
     )
 {
-    DbgPrint("FuseCommonQueryVolumeInfo\n");
-    return STATUS_SUCCESS;
+    NTSTATUS Status;
+    PIO_STACK_LOCATION IrpSp;
+
+    ULONG Length;
+    FS_INFORMATION_CLASS FsInformationClass;
+    PVOID Buffer;
+
+    //
+    //  Get the current stack location
+    //
+
+    IrpSp = IoGetCurrentIrpStackLocation( Irp );
+	
+    //
+    //  Reference our input parameters to make things easier
+    //
+
+    Length = IrpSp->Parameters.QueryVolume.Length;
+    FsInformationClass = IrpSp->Parameters.QueryVolume.FsInformationClass;
+    Buffer = Irp->AssociatedIrp.SystemBuffer;
+	
+	switch (FsInformationClass) {
+
+        case FileFsVolumeInformation:
+		
+			Status = FuseQueryFsVolumeInfo(Buffer, &Length);
+            break;
+
+        case FileFsSizeInformation:
+
+            Status = STATUS_SUCCESS;
+            break;
+
+        case FileFsDeviceInformation:
+
+            Status = STATUS_SUCCESS;
+            break;
+
+        case FileFsAttributeInformation:
+
+            Status = STATUS_SUCCESS;
+            break;
+
+        case FileFsFullSizeInformation:
+
+            Status = STATUS_SUCCESS;
+            break;
+
+        default:
+
+            Status = STATUS_SUCCESS;
+            break;
+	}
+	
+    return Status;
+}
+
+NTSTATUS
+FuseQueryFsVolumeInfo (
+    IN PFILE_FS_VOLUME_INFORMATION Buffer,
+    IN OUT PULONG Length
+    )
+
+/*++
+
+Routine Description:
+
+    This routine implements the query volume info call
+
+Arguments:
+
+    Vcb - Supplies the Vcb being queried
+
+    Buffer - Supplies a pointer to the output buffer where the information
+        is to be returned
+
+    Length - Supplies the length of the buffer in byte.  This variable
+        upon return recieves the remaining bytes free in the buffer
+
+Return Value:
+
+    NTSTATUS - Returns the status for the query
+
+--*/
+
+{
+    ULONG BytesToCopy;
+
+    NTSTATUS Status;
+
+	PWCHAR HelloWorldLabel = L"HELLO_WORLD";
+	
+    //
+    //  Zero out the buffer, then extract and fill up the non zero fields.
+    //
+
+    RtlZeroMemory( Buffer, sizeof(FILE_FS_VOLUME_INFORMATION) );
+
+    Buffer->VolumeSerialNumber = 1337; // chosen at random
+
+    Buffer->SupportsObjects = FALSE;
+
+    *Length -= FIELD_OFFSET(FILE_FS_VOLUME_INFORMATION, VolumeLabel[0]);
+
+    //
+    //  Check if the buffer we're given is long enough
+    //
+
+    if ( *Length >= (ULONG)sizeof(HelloWorldLabel) ) {
+
+        BytesToCopy = sizeof(HelloWorldLabel);
+
+        Status = STATUS_SUCCESS;
+
+    } else {
+
+        BytesToCopy = *Length;
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    }
+
+    //
+    //  Copy over what we can of the volume label, and adjust *Length
+    //
+
+    Buffer->VolumeLabelLength = sizeof(HelloWorldLabel);
+
+    RtlCopyMemory( &Buffer->VolumeLabel[0],
+                   HelloWorldLabel,
+                   BytesToCopy );
+
+    *Length -= BytesToCopy;
+	
+    return Status;
 }
 
 NTSTATUS
@@ -433,7 +565,7 @@ FuseFastIoCheckIfPossible (
     )
 {
     DbgPrint("FuseFastIoCheckIfPossible\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -446,7 +578,7 @@ FuseFastQueryBasicInfo (
     )
 {
     DbgPrint("FuseFastQueryBasicInfo\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -459,7 +591,7 @@ FuseFastQueryStdInfo (
     )
 {
     DbgPrint("FuseFastQueryStdInfo\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -472,7 +604,7 @@ FuseFastQueryNetworkOpenInfo (
     )
 {
     DbgPrint("FuseFastQueryNetworkOpenInfo\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -489,7 +621,7 @@ FuseFastLock (
     )
 {
     DbgPrint("FuseFastLock\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -504,7 +636,7 @@ FuseFastUnlockSingle (
     )
 {
     DbgPrint("FuseFastUnlockSingle\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -516,7 +648,7 @@ FuseFastUnlockAll (
     )
 {
     DbgPrint("FuseFastUnlockAll\n");
-    return TRUE;
+    return FALSE;
 }
 
 BOOLEAN
@@ -529,7 +661,7 @@ FuseFastUnlockAllByKey (
     )
 {
     DbgPrint("FuseFastUnlockAllByKey\n");
-    return TRUE;
+    return FALSE;
 }
 
 NTSTATUS

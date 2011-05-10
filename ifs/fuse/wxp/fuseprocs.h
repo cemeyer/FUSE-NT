@@ -316,12 +316,20 @@ FuseCommonShutdown (                     //  implemented in FuseIo.c
     IN PIRP Irp
     );
 
+	
 NTSTATUS
 FuseCommonQueryVolumeInfo (              //  implemented in FuseIo.c
-    IN PIRP_CONTEXT IrpContext,
+    // IN PIRP_CONTEXT IrpContext, -- see implementation.
     IN PIRP Irp
     );
 
+NTSTATUS
+FuseQueryFsVolumeInfo (
+    IN PFILE_FS_VOLUME_INFORMATION Buffer,
+    IN OUT PULONG Length
+    );
+
+	
 NTSTATUS
 FuseCommonSetVolumeInfo (                //  implemented in FuseIo.c
     IN PIRP_CONTEXT IrpContext,
