@@ -1708,16 +1708,272 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 	resp->params.read.buflen = buflen - sizeof(FUSENT_RESP);
 	fusent_sendmsg(req, resp, buflen);
 }
-#endif /* __CYGWIN__ */
 
-static void fuse_ll_process(void *data, const char *buf, size_t len,
-			    struct fuse_chan *ch)
+// Handle an IRP_MJ_CREATE call
+static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+{
+	// Some of the behavior here probably doesn't match
+	// one-to-one with NT. Does anyone actually use
+	// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
+	// -- cemeyer
+
+	// Decode NT operation flags from IRP:
+	uint32_t CreateOptions = iosp->Parameters.Create.Options;
+	uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
+	uint8_t CreateDisp = CreateOptions >> 24;
+
+	int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
+	if (CreateDisp != FILE_OPEN && CreateDisp != FILE_OVERWRITE)
+		fuse_flags |= O_CREAT;
+	if (CreateDisp == FILE_CREATE) fuse_flags |= O_EXCL;
+	if (CreateDisp == FILE_OVERWRITE || CreateDisp == FILE_OVERWRITE_IF ||
+			CreateDisp == FILE_SUPERSEDE)
+		fuse_flags |= O_TRUNC;
+	if (CreateOptions & FILE_DIRECTORY_FILE) fuse_flags |= O_DIRECTORY;
+
+	// Extract the file path from the NT request:
+	uint32_t fnamelen;
+	uint16_t *fnamep;
+	fusent_decode_request_create((FUSENT_CREATE_REQ *)ntreq,
+			&fnamelen, &fnamep);
+
+	// Translate it to UTF8:
+	char *inbuf = (char *)fnamep;
+	size_t inbytes = fnamelen, outbytes = FUSENT_MAX_PATH-1;
+
+	char *llargs;
+	fuse_ino_t llinode;
+	int llop;
+
+	// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
+	fuse_ino_t fino;
+
+	if (fuse_flags & O_CREAT) {
+		char stbuf[sizeof(struct fuse_create_in) + FUSENT_MAX_PATH];
+		char *outbuf = stbuf + sizeof(struct fuse_create_in),
+		     *outbuf2 = outbuf;
+
+		// Convert and then reset the cd
+		iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+		iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+		size_t utf8len = outbuf - outbuf2;
+
+		// Convert the path to a unix-like path
+		fusent_convert_win_path(outbuf2, &utf8len);
+
+		struct fuse_create_in *args = (struct fuse_create_in *)stbuf;
+		args->flags = fuse_flags;
+		args->umask = S_IXGRP | S_IXOTH;
+
+		// inode for create() should be inode of parent, apparently
+		fuse_ino_t par_inode;
+		char *basename;
+		if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
+			err = ENOENT;
+			goto reply_err_nt;
+		}
+		// Move basename into beginning of filename argument to creat()
+		// and null-terminate:
+		memmove(outbuf2, basename, outbuf - basename);
+		outbuf2[outbuf - basename] = '\0';
+
+		// Invoke create!
+		llop = FUSE_CREATE;
+		llinode = par_inode;
+		llargs = (char *)args;
+	}
+	else {
+		char stbuf[sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
+		char *outbuf = stbuf + sizeof(struct fuse_open_in),
+		     *outbuf2 = outbuf;
+
+		// Convert and then reset the cd
+		iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+		iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+		size_t utf8len = outbuf - outbuf2;
+
+		// Convert the path to a unix-like path
+		fusent_convert_win_path(outbuf2, &utf8len);
+
+		struct fuse_open_in *args = (struct fuse_open_in *)stbuf;
+		args->flags = fuse_flags;
+
+		// inode for open() needs to be looked up with lookup()
+		// lookup() takes parent inode and path.
+		// root inode is always FUSE_ROOT_ID
+
+		fuse_ino_t inode;
+		if (fusent_get_inode(req, outbuf2, &inode) < 0) {
+			err = ENOENT;
+			goto reply_err_nt;
+		}
+
+		fino = inode;
+
+		llop = FUSE_OPEN;
+		llinode = inode;
+		llargs = (char *)args;
+	}
+
+	struct fuse_out_header outh;
+
+	// OPEN => fuse_open_out;
+	// CREATE => fuse_entry_out + fuse_open_out
+	const size_t buflen = sizeof(struct fuse_entry_out) +
+		sizeof(struct fuse_open_out);
+
+	char *giantbuf = malloc(buflen);
+	req->response_hijack = &outh;
+	req->response_hijack_buf = giantbuf;
+	req->response_hijack_buflen = buflen;
+
+	fuse_ll_ops[llop].func(req, llinode, llargs);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		// outh.error will be >= -1000 and <= 0:
+		err = -outh.error;
+		free(giantbuf);
+		goto reply_err_nt;
+	}
+
+	struct fuse_open_out *openresp = (struct fuse_open_out *)giantbuf;
+	if (llop == FUSE_CREATE) {
+		openresp = (struct fuse_open_out *)(giantbuf + sizeof(struct fuse_entry_out));
+		fino = ((struct fuse_entry_out *)giantbuf)->nodeid;
+	}
+
+	struct fuse_file_info *fi = malloc(sizeof(struct fuse_file_info));
+	fi->fh = openresp->fh;
+	fi->flags = openresp->open_flags;
+	free(giantbuf);
+
+	fusent_add_fop_mapping(ntreq->fop, fi, fino);
+	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
+}
+
+// Handle an IRP_MJ_READ request
+static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+{
+	PFILE_OBJECT fop = ntreq->fop;
+	ULONG len = iosp->Parameters.Read.Length;
+	LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
+
+	// Likewise, fi and inode get initialized by fusent_fi_inode_from_fop().
+	// Bogus compiler warning. --cemeyer
+	struct fuse_file_info *fi;
+	fuse_ino_t inode;
+	if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
+		err = EBADF;
+		goto reply_err_nt;
+	}
+
+	struct fuse_out_header outh;
+	char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
+	req->response_hijack = &outh;
+	req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
+	req->response_hijack_buflen = len;
+
+	struct fuse_read_in readargs;
+	readargs.fh = fi->fh;
+	readargs.flags = fi->flags;
+	readargs.lock_owner = fi->lock_owner;
+	readargs.size = len;
+	readargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+
+	fuse_ll_ops[FUSE_READ].func(req, inode, &readargs);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		free(giantbuf);
+		err = -outh.error;
+		goto reply_err_nt;
+	}
+
+	fusent_reply_read(req, ntreq->pirp, ntreq->fop,
+			outh.len - sizeof(struct fuse_out_header) + sizeof(FUSENT_RESP),
+			giantbuf);
+
+	free(giantbuf);
+}
+
+// Handle an IRP_MJ_WRITE request
+static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+{
+	PFILE_OBJECT fop = ntreq->fop;
+	ULONG len = iosp->Parameters.Write.Length;
+	LARGE_INTEGER off = iosp->Parameters.Write.ByteOffset;
+
+	// fi and inode get initialized by fusent_fi_inode_from_fop().
+	// Bogus compiler warning. --cemeyer
+	struct fuse_file_info *fi;
+	fuse_ino_t inode;
+	if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
+		err = EBADF;
+		goto reply_err_nt;
+	}
+
+	uint32_t stoutbuf[sizeof(struct fuse_write_out) / sizeof(uint32_t)];
+	uint8_t *outbufp;
+	uint32_t outbuflen;
+	fusent_decode_request_write((FUSENT_WRITE_REQ *)ntreq, &outbuflen, &outbufp);
+
+	struct fuse_out_header outh;
+	req->response_hijack = &outh;
+
+	// If the buffer given us for writing is too small for a fuse_write_out,
+	// point at a stack buffer instead and copy that in.
+	if (outbuflen >= sizeof(struct fuse_write_out)) {
+		req->response_hijack_buf = (char *)outbufp;
+		req->response_hijack_buflen = outbuflen;
+	}
+	else {
+		req->response_hijack_buf = (char *)stoutbuf;
+		req->response_hijack_buflen = sizeof(struct fuse_write_out);
+		memcpy(stoutbuf, outbufp, outbuflen);
+	}
+
+	struct fuse_write_in writeargs;
+	writeargs.fh = fi->fh;
+	writeargs.flags = fi->flags;
+	writeargs.lock_owner = fi->lock_owner;
+	writeargs.size = len;
+	writeargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+
+	fuse_ll_ops[FUSE_WRITE].func(req, inode, &writeargs);
+
+	uint32_t written = ((struct fuse_write_out *)req->response_hijack_buf)->size;
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		err = -outh.error;
+		goto reply_err_nt;
+	}
+
+	fusent_reply_write(req, ntreq->pirp, ntreq->fop, written);
+}
+
+// Handle an IRP_MJ_DIRECTORY_CONTROL request
+static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+{
+	// RelatedFileObject to the directory we actually care about:
+	PFILE_OBJECT relatedfop = ntreq->fop;
+	ULONG len = iosp->Parameters.NotifyDirectory.Length;
+
+}
+
+static void fusent_ll_process(void *data, const char *buf, size_t len,
+		struct fuse_chan *ch)
 {
 	struct fuse_ll *f = (struct fuse_ll *) data;
 	struct fuse_req *req;
 	int err;
 
-#if defined __CYGWIN__
 	FUSENT_REQ *ntreq = (FUSENT_REQ *)buf;
 
 	req = (struct fuse_req *) calloc(1, sizeof(struct fuse_req));
@@ -1727,6 +1983,7 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	}
 
 	if (!f->got_init) {
+		// TODO(cemeyer) call do_init or whatever fuse calls instead of this.
 		// Do FUSE init:
 		f->got_init = 1;
 		f->conn.proto_major = 7; // stolen from the 2.6.38 kernel
@@ -1760,252 +2017,19 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 
 	switch (irptype) {
 		case IRP_MJ_CREATE:
-			{
-			// Some of the behavior here probably doesn't match
-			// one-to-one with NT. Does anyone actually use
-			// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
-			// -- cemeyer
-
-			// Decode NT operation flags from IRP:
-			uint32_t CreateOptions = iosp->Parameters.Create.Options;
-			uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
-			uint8_t CreateDisp = CreateOptions >> 24;
-
-			int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
-			if (CreateDisp != FILE_OPEN && CreateDisp != FILE_OVERWRITE)
-				fuse_flags |= O_CREAT;
-			if (CreateDisp == FILE_CREATE) fuse_flags |= O_EXCL;
-			if (CreateDisp == FILE_OVERWRITE || CreateDisp == FILE_OVERWRITE_IF ||
-					CreateDisp == FILE_SUPERSEDE)
-				fuse_flags |= O_TRUNC;
-			if (CreateOptions & FILE_DIRECTORY_FILE) fuse_flags |= O_DIRECTORY;
-
-			// Extract the file path from the NT request:
-			uint32_t fnamelen;
-			uint16_t *fnamep;
-			fusent_decode_request_create((FUSENT_CREATE_REQ *)ntreq,
-					&fnamelen, &fnamep);
-
-			// Translate it to UTF8:
-			char *inbuf = (char *)fnamep;
-			size_t inbytes = fnamelen, outbytes = FUSENT_MAX_PATH-1;
-
-			char *llargs;
-			fuse_ino_t llinode;
-			int llop;
-
-			// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
-			fuse_ino_t fino;
-
-			if (fuse_flags & O_CREAT) {
-				char stbuf[sizeof(struct fuse_create_in) + FUSENT_MAX_PATH];
-				char *outbuf = stbuf + sizeof(struct fuse_create_in),
-				     *outbuf2 = outbuf;
-
-				// Convert and then reset the cd
-				iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
-				iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
-				size_t utf8len = outbuf - outbuf2;
-
-				// Convert the path to a unix-like path
-				fusent_convert_win_path(outbuf2, &utf8len);
-
-				struct fuse_create_in *args = (struct fuse_create_in *)stbuf;
-				args->flags = fuse_flags;
-				args->umask = S_IXGRP | S_IXOTH;
-
-				// inode for create() should be inode of parent, apparently
-				fuse_ino_t par_inode;
-				char *basename;
-				if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
-					err = ENOENT;
-					goto reply_err_nt;
-				}
-				// Move basename into beginning of filename argument to creat()
-				// and null-terminate:
-				memmove(outbuf2, basename, outbuf - basename);
-				outbuf2[outbuf - basename] = '\0';
-
-				// Invoke create!
-				llop = FUSE_CREATE;
-				llinode = par_inode;
-				llargs = (char *)args;
-			}
-			else {
-				char stbuf[sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
-				char *outbuf = stbuf + sizeof(struct fuse_open_in),
-				     *outbuf2 = outbuf;
-
-				// Convert and then reset the cd
-				iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
-				iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
-				size_t utf8len = outbuf - outbuf2;
-
-				// Convert the path to a unix-like path
-				fusent_convert_win_path(outbuf2, &utf8len);
-
-				struct fuse_open_in *args = (struct fuse_open_in *)stbuf;
-				args->flags = fuse_flags;
-
-				// inode for open() needs to be looked up with lookup()
-				// lookup() takes parent inode and path.
-				// root inode is always FUSE_ROOT_ID
-
-				fuse_ino_t inode;
-				if (fusent_get_inode(req, outbuf2, &inode) < 0) {
-					err = ENOENT;
-					goto reply_err_nt;
-				}
-
-				fino = inode;
-
-				llop = FUSE_OPEN;
-				llinode = inode;
-				llargs = (char *)args;
-			}
-
-			struct fuse_out_header outh;
-
-			// OPEN => fuse_open_out;
-			// CREATE => fuse_entry_out + fuse_open_out
-			const size_t buflen = sizeof(struct fuse_entry_out) +
-				sizeof(struct fuse_open_out);
-
-			char *giantbuf = malloc(buflen);
-			req->response_hijack = &outh;
-			req->response_hijack_buf = giantbuf;
-			req->response_hijack_buflen = buflen;
-
-			fuse_ll_ops[llop].func(req, llinode, llargs);
-
-			req->response_hijack = NULL;
-			req->response_hijack_buf = NULL;
-
-			if (outh.error) {
-				// outh.error will be >= -1000 and <= 0:
-				err = -outh.error;
-				free(giantbuf);
-				goto reply_err_nt;
-			}
-
-			struct fuse_open_out *openresp = (struct fuse_open_out *)giantbuf;
-			if (llop == FUSE_CREATE) {
-				openresp = (struct fuse_open_out *)(giantbuf + sizeof(struct fuse_entry_out));
-				fino = ((struct fuse_entry_out *)giantbuf)->nodeid;
-			}
-
-			struct fuse_file_info *fi = malloc(sizeof(struct fuse_file_info));
-			fi->fh = openresp->fh;
-			fi->flags = openresp->open_flags;
-			free(giantbuf);
-
-			fusent_add_fop_mapping(ntreq->fop, fi, fino);
-			fusent_reply_create(req, ntreq->pirp, ntreq->fop);
-			}
+			fusent_do_create(ntreq, iosp, req);
 			break;
 
 		case IRP_MJ_READ:
-			{
-			PFILE_OBJECT fop = ntreq->fop;
-			ULONG len = iosp->Parameters.Read.Length;
-			LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
-			
-			// Likewise, fi and inode get initialized by fusent_fi_inode_from_fop().
-			// Bogus compiler warning. --cemeyer
-			struct fuse_file_info *fi;
-			fuse_ino_t inode;
-			if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
-				err = EBADF;
-				goto reply_err_nt;
-			}
-
-			struct fuse_out_header outh;
-			char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
-			req->response_hijack = &outh;
-			req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
-			req->response_hijack_buflen = len;
-
-			struct fuse_read_in readargs;
-			readargs.fh = fi->fh;
-			readargs.flags = fi->flags;
-			readargs.lock_owner = fi->lock_owner;
-			readargs.size = len;
-			readargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
-
-			fuse_ll_ops[FUSE_READ].func(req, inode, &readargs);
-
-			req->response_hijack = NULL;
-			req->response_hijack_buf = NULL;
-
-			if (outh.error) {
-				free(giantbuf);
-				err = -outh.error;
-				goto reply_err_nt;
-			}
-
-			fusent_reply_read(req, ntreq->pirp, ntreq->fop,
-					outh.len - sizeof(struct fuse_out_header) + sizeof(FUSENT_RESP),
-					giantbuf);
-
-			free(giantbuf);
-			}
+			fusent_do_read(ntreq, iosp, req);
 			break;
 
 		case IRP_MJ_WRITE:
-			{
-			PFILE_OBJECT fop = ntreq->fop;
-			ULONG len = iosp->Parameters.Write.Length;
-			LARGE_INTEGER off = iosp->Parameters.Write.ByteOffset;
-			
-			// fi and inode get initialized by fusent_fi_inode_from_fop().
-			// Bogus compiler warning. --cemeyer
-			struct fuse_file_info *fi;
-			fuse_ino_t inode;
-			if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
-				err = EBADF;
-				goto reply_err_nt;
-			}
+			fusent_do_write(ntreq, iosp, req);
+			break;
 
-			uint32_t stoutbuf[sizeof(struct fuse_write_out) / sizeof(uint32_t)];
-			uint8_t *outbufp;
-			uint32_t outbuflen;
-			fusent_decode_request_write((FUSENT_WRITE_REQ *)ntreq, &outbuflen, &outbufp);
-
-			struct fuse_out_header outh;
-			req->response_hijack = &outh;
-
-			// If the buffer given us for writing is too small for a fuse_write_out,
-			// point at a stack buffer instead and copy that in.
-			if (outbuflen >= sizeof(struct fuse_write_out)) {
-				req->response_hijack_buf = (char *)outbufp;
-				req->response_hijack_buflen = outbuflen;
-			}
-			else {
-				req->response_hijack_buf = (char *)stoutbuf;
-				req->response_hijack_buflen = sizeof(struct fuse_write_out);
-				memcpy(stoutbuf, outbufp, outbuflen);
-			}
-
-			struct fuse_write_in writeargs;
-			writeargs.fh = fi->fh;
-			writeargs.flags = fi->flags;
-			writeargs.lock_owner = fi->lock_owner;
-			writeargs.size = len;
-			writeargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
-
-			fuse_ll_ops[FUSE_WRITE].func(req, inode, &writeargs);
-
-			uint32_t written = ((struct fuse_write_out *)req->response_hijack_buf)->size;
-			req->response_hijack = NULL;
-			req->response_hijack_buf = NULL;
-
-			if (outh.error) {
-				err = -outh.error;
-				goto reply_err_nt;
-			}
-
-			fusent_reply_write(req, ntreq->pirp, ntreq->fop, written);
-			}
+		case IRP_MJ_DIRECTORY_CONTROL:
+			fusent_do_directory_control(ntreq, iosp, req);
 			break;
 
 		default:
@@ -2016,7 +2040,17 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 
 reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-#else
+}
+
+#else /* __CYGWIN__ */
+
+static void fuse_ll_process(void *data, const char *buf, size_t len,
+			    struct fuse_chan *ch)
+{
+	struct fuse_ll *f = (struct fuse_ll *) data;
+	struct fuse_req *req;
+	int err;
+
 	struct fuse_in_header *in = (struct fuse_in_header *) buf;
 	const void *inarg = buf + sizeof(struct fuse_in_header);
 
@@ -2078,8 +2112,8 @@ reply_err_nt:
 
 reply_err:
 	fuse_reply_err(req, err);
-#endif
 }
+#else /* !__CYGWIN__ */
 
 enum {
 	KEY_HELP,
@@ -2175,7 +2209,11 @@ struct fuse_session *fuse_lowlevel_new_common(struct fuse_args *args,
 	struct fuse_ll *f;
 	struct fuse_session *se;
 	struct fuse_session_ops sop = {
+#if defined __CYGWIN__
+		.process = fusent_ll_process,
+#else
 		.process = fuse_ll_process,
+#endif
 		.destroy = fuse_ll_destroy,
 	};
 
