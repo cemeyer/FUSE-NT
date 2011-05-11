@@ -1646,7 +1646,8 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 
 // Given a path in `fn', locate the inode for `fn'.
 // Returns negative if `fn' can't be found.
-static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in) {
+static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in)
+{
 	char path[FUSENT_MAX_PATH + 3];
 	size_t sl = strlen(fn);
 	memcpy(path, fn, sl);
@@ -1662,12 +1663,19 @@ static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in) {
 	return fusent_get_parent_inode(req, fn, &bn, in);
 }
 
+static inline NTSTATUS fusent_translate_errno(int errno)
+{
+	if (!errno) return STATUS_SUCCESS;
+	return STATUS_UNSUCCESSFUL;
+}
+
 static inline void fusent_fill_resp(FUSENT_RESP *resp, PIRP pirp, PFILE_OBJECT fop, int error)
 {
 	memset(resp, 0, sizeof(FUSENT_RESP));
 	resp->pirp = pirp;
 	resp->fop = fop;
 	resp->error = error;
+	resp->status = fusent_translate_errno(error);
 }
 
 // Sends a response to the kernel. len is not always == sizeof(FUSENT_RESP),

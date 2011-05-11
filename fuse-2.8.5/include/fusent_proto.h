@@ -76,6 +76,7 @@ typedef struct _FUSENT_RESP {
 	PFILE_OBJECT fop;
 	int error; // all high-level fuse operations return int
 		   // negative is error (-errno); zero is OK
+	NSTATUS status;
 	union {
 		struct {
 			uint32_t buflen;
