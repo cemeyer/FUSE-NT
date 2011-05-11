@@ -243,7 +243,6 @@ int fuse_mnt_umount(const char *progname, const char *abs_mnt,
 
 	return exec_umount(progname, rel_mnt, lazy);
 }
-#endif
 
 char *fuse_mnt_resolve_path(const char *progname, const char *orig)
 {
@@ -361,3 +360,4 @@ int fuse_mnt_check_fuseblk(void)
 	fclose(f);
 	return 0;
 }
+#endif /* !__CYGWIN__ */

@@ -107,12 +107,19 @@ static int fuse_helper_opt_proc(void *data, const char *arg, int key,
 	case FUSE_OPT_KEY_NONOPT:
 		if (!hopts->mountpoint) {
 			char mountpoint[PATH_MAX];
+#if defined __CYGWIN__
+			// We don't normalize mountpoints for Windows; for now we expect only
+			// drive letter mounts (e.g., "F:") -- realpath() falls over on these.
+			strncpy(mountpoint, arg, PATH_MAX-1);
+			mountpoint[PATH_MAX-1] = '\0';
+#else
 			if (realpath(arg, mountpoint) == NULL) {
 				fprintf(stderr,
 					"fuse: bad mount point `%s': %s\n",
 					arg, strerror(errno));
 				return -1;
 			}
+#endif
 			return fuse_opt_add_opt(&hopts->mountpoint, mountpoint);
 		} else {
 			fprintf(stderr, "fuse: invalid argument `%s'\n", arg);

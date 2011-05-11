@@ -14,6 +14,12 @@
 #include "fuse_fs_defines.h"
 #include "mount_util.h"
 
+#ifdef __CYGWIN__
+# include "fusent_proto.h"
+# include <ctype.h>
+# include <wchar.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -572,7 +578,34 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 		goto out;
 
 #if defined __CYGWIN__
-	// TODO(cemeyer) mount
+	if (!mountpoint || strlen(mountpoint) != 2 || !isalpha((int)mountpoint[0]) ||
+			mountpoint[1] != ':') {
+		fprintf(stderr, "fusent: mountpoint is only allowed to be an (unused) drive, e.g. `U:'\n");
+		goto out;
+	}
+
+	UNICODE_STRING unidev;
+	// TODO template this out; swprintf definitely doesn't work.
+	const WCHAR *devname = L"\\Device\\Fuse\\TESTTESTTEST";
+	RtlInitUnicodeString(&unidev, devname);
+
+	OBJECT_ATTRIBUTES oa;
+	InitializeObjectAttributes(&oa, &unidev, 0, NULL, NULL);
+
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS stat = NtCreateFile(fd, FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE,
+			&oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL,
+			FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_CREATE,
+			FILE_NO_INTERMEDIATE_BUFFERING | FILE_SYNCHRONOUS_IO_ALERT |
+			FILE_WRITE_THROUGH | FILE_NO_EA_KNOWLEDGE,
+			NULL, 0);
+
+	if (stat != STATUS_SUCCESS) {
+		fprintf(stderr, "fusent: failed to open device file (0x%08x)\n", (unsigned)stat);
+		goto out;
+	}
+
+	DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, "\\Device\\Fuse\\TESTTESTTEST");
 #else
 	res = fuse_mount_sys(mountpoint, &mo, mnt_opts);
 	if (res == -2) {
