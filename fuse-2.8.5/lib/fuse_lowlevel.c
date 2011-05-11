@@ -1551,7 +1551,11 @@ static struct {
 	[FUSE_IOCTL]	   = { do_ioctl,       "IOCTL"	     },
 	[FUSE_POLL]	   = { do_poll,        "POLL"	     },
 	[FUSE_DESTROY]	   = { do_destroy,     "DESTROY"     },
+#if defined __CYGWIN__
+	[CUSE_INIT]	   = { NULL,           "CUSE_INIT"   },
+#else
 	[CUSE_INIT]	   = { cuse_lowlevel_init, "CUSE_INIT"   },
+#endif
 };
 
 #define FUSE_MAXOP (sizeof(fuse_ll_ops) / sizeof(fuse_ll_ops[0]))
@@ -2381,7 +2385,7 @@ int fuse_req_getgroups(fuse_req_t req, int size, gid_t list[])
 }
 #endif
 
-#ifndef __FreeBSD__
+#if !defined __FreeBSD__ && !defined __CYGWIN__
 
 static void fill_open_compat(struct fuse_open_out *arg,
 			     const struct fuse_file_info_compat *f)
@@ -2483,7 +2487,7 @@ FUSE_SYMVER(".symver fuse_reply_statfs_compat,fuse_reply_statfs@FUSE_2.4");
 FUSE_SYMVER(".symver fuse_reply_open_compat,fuse_reply_open@FUSE_2.4");
 FUSE_SYMVER(".symver fuse_lowlevel_new_compat,fuse_lowlevel_new@FUSE_2.4");
 
-#else /* __FreeBSD__ */
+#else /* __FreeBSD__ || __CYGWIN__ */
 
 int fuse_sync_compat_args(struct fuse_args *args)
 {
@@ -2491,7 +2495,9 @@ int fuse_sync_compat_args(struct fuse_args *args)
 	return 0;
 }
 
-#endif /* __FreeBSD__ */
+#endif /* __FreeBSD__ || __CYGWIN__ */
+
+#ifndef __CYGWIN__
 
 struct fuse_session *fuse_lowlevel_new_compat25(struct fuse_args *args,
 				const struct fuse_lowlevel_ops_compat25 *op,
@@ -2506,3 +2512,5 @@ struct fuse_session *fuse_lowlevel_new_compat25(struct fuse_args *args,
 }
 
 FUSE_SYMVER(".symver fuse_lowlevel_new_compat25,fuse_lowlevel_new@FUSE_2.5");
+
+#endif /* __CYGWIN__ */

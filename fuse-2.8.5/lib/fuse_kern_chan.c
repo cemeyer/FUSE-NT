@@ -15,14 +15,33 @@
 #include <unistd.h>
 #include <assert.h>
 
+#ifdef __CYGWIN__
+# include "fusent_proto.h"
+#endif
+
 static int fuse_kern_chan_receive(struct fuse_chan **chp, char *buf,
 				  size_t size)
 {
 	struct fuse_chan *ch = *chp;
-	int err;
 	ssize_t res;
 	struct fuse_session *se = fuse_chan_session(ch);
 	assert(se != NULL);
+
+#if defined __CYGWIN__
+	IO_STATUS_BLOCK iosb;
+	NTSTATUS stat = NtReadFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb, buf, size, NULL, NULL);
+
+	if (fuse_session_exited(se))
+		return 0;
+
+	if (stat != STATUS_SUCCESS) {
+		perror("fuse: reading device");
+		return -EFAULT;
+	}
+
+	res = iosb.Information;
+#else
+	int err;
 
 restart:
 	res = read(fuse_chan_fd(ch), buf, size);
@@ -47,7 +66,14 @@ restart:
 			perror("fuse: reading device");
 		return -err;
 	}
-	if ((size_t) res < sizeof(struct fuse_in_header)) {
+#endif
+
+#if defined __CYGWIN__
+	if ((size_t) res < sizeof(FUSENT_REQ))
+#else
+	if ((size_t) res < sizeof(struct fuse_in_header))
+#endif
+	{
 		fprintf(stderr, "short read on fuse device\n");
 		return -EIO;
 	}
@@ -58,6 +84,28 @@ static int fuse_kern_chan_send(struct fuse_chan *ch, const struct iovec iov[],
 			       size_t count)
 {
 	if (iov) {
+#if defined __CYGWIN__
+		IO_STATUS_BLOCK iosb;
+		int io;
+
+		for (io = 0; io < count; io ++) {
+			if (!iov[io].iov_len) continue;
+
+			NTSTATUS stat = NtWriteFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb,
+					iov[io].iov_base, iov[io].iov_len, NULL, NULL);
+
+			if (stat != STATUS_SUCCESS) {
+				struct fuse_session *se = fuse_chan_session(ch);
+
+				assert(se != NULL);
+
+				if (fuse_session_exited(se)) return 0;
+
+				perror("fuse: writing device");
+				return -EFAULT;
+			}
+		}
+#else
 		ssize_t res = writev(fuse_chan_fd(ch), iov, count);
 		int err = errno;
 
@@ -71,18 +119,27 @@ static int fuse_kern_chan_send(struct fuse_chan *ch, const struct iovec iov[],
 				perror("fuse: writing device");
 			return -err;
 		}
+#endif
 	}
 	return 0;
 }
 
 static void fuse_kern_chan_destroy(struct fuse_chan *ch)
 {
+#if defined __CYGWIN__
+	CloseHandle(fuse_chan_fd(ch));
+#else
 	close(fuse_chan_fd(ch));
+#endif
 }
 
 #define MIN_BUFSIZE 0x21000
 
+#if defined __CYGWIN__
+struct fuse_chan *fuse_kern_chan_new(HANDLE fd)
+#else
 struct fuse_chan *fuse_kern_chan_new(int fd)
+#endif
 {
 	struct fuse_chan_ops op = {
 		.receive = fuse_kern_chan_receive,

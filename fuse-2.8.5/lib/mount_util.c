@@ -21,6 +21,7 @@
 #include <sys/mount.h>
 #include <sys/param.h>
 
+#ifndef __CYGWIN__
 static int mtab_needs_update(const char *mnt)
 {
 	int res;
@@ -230,8 +231,6 @@ static int exec_umount(const char *progname, const char *rel_mnt, int lazy)
 int fuse_mnt_umount(const char *progname, const char *abs_mnt,
 		    const char *rel_mnt, int lazy)
 {
-	printf("fuse_mnt_umount\n");
-	/*
 	int res;
 
 	if (!mtab_needs_update(abs_mnt)) {
@@ -243,9 +242,8 @@ int fuse_mnt_umount(const char *progname, const char *abs_mnt,
 	}
 
 	return exec_umount(progname, rel_mnt, lazy);
-	*/
-	return 0;
 }
+#endif
 
 char *fuse_mnt_resolve_path(const char *progname, const char *orig)
 {

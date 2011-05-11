@@ -196,6 +196,14 @@ static struct fuse_chan *fuse_mount_common(const char *mountpoint,
 					   struct fuse_args *args)
 {
 	struct fuse_chan *ch;
+
+#if defined __CYGWIN__
+	HANDLE fd;
+
+	int err = fusent_kern_mount(mountpoint, args, &fd);
+	if (err < 0)
+		return NULL;
+#else
 	int fd;
 
 	/*
@@ -211,8 +219,10 @@ static struct fuse_chan *fuse_mount_common(const char *mountpoint,
 	fd = fuse_mount_compat25(mountpoint, args);
 	if (fd == -1)
 		return NULL;
+#endif
 
 	ch = fuse_kern_chan_new(fd);
+
 	if (!ch)
 		fuse_kern_unmount(mountpoint, fd);
 
@@ -226,7 +236,16 @@ struct fuse_chan *fuse_mount(const char *mountpoint, struct fuse_args *args)
 
 static void fuse_unmount_common(const char *mountpoint, struct fuse_chan *ch)
 {
+#if !defined __CYGWIN__
 	int fd = ch ? fuse_chan_fd(ch) : -1;
+#else
+	if (!ch) {
+		fprintf(stderr, "err: fuse_unmount_common called with NULL ch\n");
+		return;
+	}
+	HANDLE fd = fuse_chan_fd(ch);
+#endif
+
 	fuse_kern_unmount(mountpoint, fd);
 	fuse_chan_destroy(ch);
 }
@@ -241,7 +260,11 @@ struct fuse *fuse_setup_common(int argc, char *argv[],
 			       size_t op_size,
 			       char **mountpoint,
 			       int *multithreaded,
+#if defined __CYGWIN__
+			       HANDLE *fd,
+#else
 			       int *fd,
+#endif
 			       void *user_data,
 			       int compat)
 {
@@ -362,6 +385,8 @@ int fuse_version(void)
 	return FUSE_VERSION;
 }
 
+#ifndef __CYGWIN__
+
 #include "fuse_compat.h"
 
 #ifndef __FreeBSD__
@@ -458,3 +483,5 @@ FUSE_SYMVER(".symver fuse_setup_compat25,fuse_setup@FUSE_2.5");
 FUSE_SYMVER(".symver fuse_teardown_compat22,fuse_teardown@FUSE_2.2");
 FUSE_SYMVER(".symver fuse_main_real_compat25,fuse_main_real@FUSE_2.5");
 FUSE_SYMVER(".symver fuse_mount_compat25,fuse_mount@FUSE_2.5");
+
+#endif /* __CYGWIN__ */

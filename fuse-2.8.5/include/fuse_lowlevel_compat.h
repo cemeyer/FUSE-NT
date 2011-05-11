@@ -9,6 +9,8 @@
 /* these definitions provide source compatibility to prior versions.
    Do not include this file directly! */
 
+#ifndef __CYGWIN__
+
 struct fuse_lowlevel_ops_compat25 {
 	void (*init) (void *userdata);
 	void (*destroy) (void *userdata);
@@ -67,12 +69,14 @@ struct fuse_session *fuse_lowlevel_new_compat25(struct fuse_args *args,
 				const struct fuse_lowlevel_ops_compat25 *op,
 				size_t op_size, void *userdata);
 
+#endif
+
 size_t fuse_dirent_size(size_t namelen);
 
 char *fuse_add_dirent(char *buf, const char *name, const struct stat *stbuf,
 		      off_t off);
 
-#ifndef __FreeBSD__
+#if !defined __FreeBSD__ && !defined __CYGWIN__
 
 #include <sys/statfs.h>
 
@@ -139,7 +143,9 @@ struct fuse_session *fuse_lowlevel_new_compat(const char *opts,
 				const struct fuse_lowlevel_ops_compat *op,
 				size_t op_size, void *userdata);
 
-#endif /* __FreeBSD__ */
+#endif /* __FreeBSD__ || __CYGWIN__*/
+
+#ifndef __CYGWIN__
 
 struct fuse_chan_ops_compat24 {
 	int (*receive)(struct fuse_chan *ch, char *buf, size_t size);
@@ -151,5 +157,11 @@ struct fuse_chan_ops_compat24 {
 struct fuse_chan *fuse_chan_new_compat24(struct fuse_chan_ops_compat24 *op,
 					 int fd, size_t bufsize, void *data);
 
+#endif /* __CYGWIN__ */
+
 int fuse_chan_receive(struct fuse_chan *ch, char *buf, size_t size);
+#if defined __CYGWIN__
+struct fuse_chan *fuse_kern_chan_new(HANDLE fd);
+#else
 struct fuse_chan *fuse_kern_chan_new(int fd);
+#endif

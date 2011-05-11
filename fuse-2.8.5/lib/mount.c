@@ -266,10 +266,14 @@ static int receive_fd(int fd)
 	return *(int*)CMSG_DATA(cmsg);
 }
 
+#if defined __CYGWIN__
+void fuse_kern_unmount(const char *mountpoint, HANDLE fd)
+{
+	// TODO(cemeyer)
+}
+#else
 void fuse_kern_unmount(const char *mountpoint, int fd)
 {
-	printf("fuse_kern_unmount\n");
-	/*
 	int res;
 	int pid;
 
@@ -313,13 +317,15 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 		_exit(1);
 	}
 	waitpid(pid, NULL, 0);
-	*/
 }
+#endif
 
+#ifndef __CYGWIN__
 void fuse_unmount_compat22(const char *mountpoint)
 {
 	fuse_kern_unmount(mountpoint, -1);
 }
+#endif
 
 static int fuse_mount_fusermount(const char *mountpoint, const char *opts,
 				 int quiet)
@@ -389,6 +395,7 @@ int fuse_mount_compat22(const char *mountpoint, const char *opts)
 	return fuse_mount_fusermount(mountpoint, opts, 0);
 }
 
+#ifndef __CYGWIN__
 static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			  const char *mnt_opts)
 {
@@ -431,13 +438,8 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 		return -1;
 	}
 
-#if defined(__CYGWIN__)
-	snprintf(tmp, sizeof(tmp),  "fd=%i,rootmode=%o,user_id=%lu,group_id=%lu",
-		 fd, stbuf.st_mode & S_IFMT, getuid(), getgid());
-#else
 	snprintf(tmp, sizeof(tmp),  "fd=%i,rootmode=%o,user_id=%i,group_id=%i",
 		 fd, stbuf.st_mode & S_IFMT, getuid(), getgid());
-#endif
 
 	res = fuse_opt_add_opt(&mo->kernel_opts, tmp);
 	if (res == -1)
@@ -461,7 +463,6 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 	strcpy(source,
 	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
 
-#if !defined(__CYGWIN__)
 	res = mount(source, mnt, type, mo->flags, mo->kernel_opts);
 	if (res == -1 && errno == ENODEV && mo->subtype) {
 		// Probably missing subtype support
@@ -507,21 +508,20 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			goto out_umount;
 	}
 
-#endif /* !__CYGWIN__ */
-
 	free(type);
 	free(source);
 
 	return fd;
 
 out_umount:
-	// umount2(mnt, 2); // lazy umount
+	umount2(mnt, 2); // lazy umount
 out_close:
 	free(type);
 	free(source);
 	close(fd);
 	return res;
 }
+#endif
 
 static int get_mnt_flag_opts(char **mnt_optsp, int flags)
 {
@@ -538,7 +538,11 @@ static int get_mnt_flag_opts(char **mnt_optsp, int flags)
 	return 0;
 }
 
+#if defined __CYGWIN__
+int fusent_kern_mount(const char *mountpoint, struct fuse_args *args, HANDLE *fd)
+#else
 int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
+#endif
 {
 	struct mount_opts mo;
 	int res = -1;
@@ -567,6 +571,9 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	if (mo.mtab_opts &&  fuse_opt_add_opt(&mnt_opts, mo.mtab_opts) == -1)
 		goto out;
 
+#if defined __CYGWIN__
+	// TODO(cemeyer) mount
+#else
 	res = fuse_mount_sys(mountpoint, &mo, mnt_opts);
 	if (res == -2) {
 		if (mo.fusermount_opts &&
@@ -592,6 +599,8 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 			res = fuse_mount_fusermount(mountpoint, mnt_opts, 0);
 		}
 	}
+#endif
+
 out:
 	free(mnt_opts);
 	free(mo.fsname);
@@ -602,4 +611,3 @@ out:
 	free(mo.mtab_opts);
 	return res;
 }
-
