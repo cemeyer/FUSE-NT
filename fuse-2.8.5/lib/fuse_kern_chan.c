@@ -29,7 +29,7 @@ static int fuse_kern_chan_receive(struct fuse_chan **chp, char *buf,
 
 #if defined __CYGWIN__
 	IO_STATUS_BLOCK iosb;
-	NTSTATUS stat = NtReadFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb, buf, size, NULL, NULL);
+	NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb, IRP_FUSE_MODULE_REQUEST, NULL, 0, buf, size);
 
 	if (fuse_session_exited(se))
 		return 0;
@@ -87,23 +87,32 @@ static int fuse_kern_chan_send(struct fuse_chan *ch, const struct iovec iov[],
 #if defined __CYGWIN__
 		IO_STATUS_BLOCK iosb;
 		int io;
+		size_t total, idx = 0;
+		for (io = 0; io < count; io ++)
+			total += iov[io].iov_len;
 
+		// Copy all the io vectors to a single buf:
+		char *buf = malloc(total);
 		for (io = 0; io < count; io ++) {
 			if (!iov[io].iov_len) continue;
+			memcpy(buf + idx, iov[io].iov_base, iov[io].iov_len);
+			idx += iov_len;
+		}
 
-			NTSTATUS stat = NtWriteFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb,
-					iov[io].iov_base, iov[io].iov_len, NULL, NULL);
+		NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb,
+				IRP_FUSE_MODULE_RESPONSE, buf, total, NULL, 0);
 
-			if (stat != STATUS_SUCCESS) {
-				struct fuse_session *se = fuse_chan_session(ch);
+		free(buf);
 
-				assert(se != NULL);
+		if (stat != STATUS_SUCCESS) {
+			struct fuse_session *se = fuse_chan_session(ch);
 
-				if (fuse_session_exited(se)) return 0;
+			assert(se != NULL);
 
-				perror("fuse: writing device");
-				return -EFAULT;
-			}
+			if (fuse_session_exited(se)) return 0;
+
+			perror("fuse: writing device");
+			return -EFAULT;
 		}
 #else
 		ssize_t res = writev(fuse_chan_fd(ch), iov, count);
