@@ -14,6 +14,10 @@ Abstract:
 --*/
 
 #ifndef _FUSE_
+typedef UCHAR FUSE8DOT3[11];
+typedef FUSE8DOT3 *PFUSE8DOT3;
+typedef ULONG32 VBO;
+typedef VBO *PVBO;
 #define _FUSE_
 
 

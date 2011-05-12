@@ -51,6 +51,15 @@ typedef enum _TYPE_OF_OPEN {
     EaFile
 
 } TYPE_OF_OPEN;
+
+TYPE_OF_OPEN
+FuseDecodeFileObject (
+    IN PFILE_OBJECT FileObject,
+    OUT PVCB *Vcb,
+    OUT PFCB *FcbOrDcb,
+    OUT PCCB *Ccb
+    );
+
 
 //
 //  The FSD Level dispatch routines.   These routines are called by the
@@ -270,7 +279,7 @@ FuseCommonSetEa (                        //  implemented in FuseIo.c
 
 NTSTATUS
 FuseCommonQueryInformation (             //  implemented in FuseIo.c
-    IN PIRP_CONTEXT IrpContext,
+    // IN PIRP_CONTEXT IrpContext,
     IN PIRP Irp
     );
 

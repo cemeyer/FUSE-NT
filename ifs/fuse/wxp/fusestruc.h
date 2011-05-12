@@ -15,6 +15,7 @@ Abstract:
 --*/
 
 #ifndef _FATSTRUC_
+#include "fuse.h"
 #define _FATSTRUC_
 
 typedef PVOID PBCB;     //**** Bcb's are now part of the cache module
@@ -1203,6 +1204,91 @@ typedef enum _CLUSTER_TYPE {
     FatClusterNext
 } CLUSTER_TYPE;
 
+typedef struct _CCB {
+
+    //
+    //  Type and size of this record (must be FUSE_NTC_CCB)
+    //
+
+    NODE_TYPE_CODE NodeTypeCode;
+    NODE_BYTE_SIZE NodeByteSize;
+
+    //
+    //  Define a 24bit wide field for Flags, but a UCHAR for Wild Cards Present
+    //  since it is used so often.  Line these up on byte boundaries for grins.
+    //
+
+    ULONG Flags:24;
+    BOOLEAN ContainsWildCards;
+
+    //
+    //  Overlay a close context on the data of the CCB.  The remaining
+    //  fields are not useful during close, and we would like to avoid
+    //  paying extra pool for it.
+    //
+
+    union {
+        
+        struct {
+
+            //
+            //  Save the offset to start search from.
+            //
+
+            VBO OffsetToStartSearchFrom;
+
+            //
+            //  The query template is used to filter directory query requests.
+            //  It originally is set to null and on the first call the NtQueryDirectory
+            //  it is set to the input filename or "*" if the name is not supplied.
+            //  All subsquent queries then use this template.
+            //
+            //  The Oem structure are unions because if the name is wild we store
+            //  the arbitrary length string, while if the name is constant we store
+            //  8.3 representation for fast comparison.
+            //
+
+            union {
+
+                //
+                //  If the template contains a wild card use this.
+                //
+
+                OEM_STRING Wild;
+
+                //
+                //  If the name is constant, use this part.
+                //
+
+                FUSE8DOT3 Constant;
+
+            } OemQueryTemplate;
+
+            UNICODE_STRING UnicodeQueryTemplate;
+
+            //
+            //  The field is compared with the similar field in the Fcb to determine
+            //  if the Ea's for a file have been modified.
+            //
+
+            ULONG EaModificationCount;
+
+            //
+            //  The following field is used as an offset into the Eas for a
+            //  particular file.  This will be the offset for the next
+            //  Ea to return.  A value of 0xffffffff indicates that the
+            //  Ea's are exhausted.
+            //
+
+            ULONG OffsetOfNextEaToReturn;
+
+        };
+
+        CLOSE_CONTEXT CloseContext;
+    };
+    
+} CCB;
+typedef CCB *PCCB;
 
 #endif // _FATSTRUC_
 

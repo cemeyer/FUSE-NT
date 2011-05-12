@@ -15,6 +15,7 @@ Abstract:
 #include <ntdef.h>
 #include "fuseprocs.h"
 #include "ntproto.h"
+#include "fusestruc.h"
 
 NTSTATUS
 FuseFsdFileSystemControl (
@@ -312,12 +313,130 @@ FuseCommonSetEa (
 
 NTSTATUS
 FuseCommonQueryInformation (
-    IN PIRP_CONTEXT IrpContext,
+    /* IN PIRP_CONTEXT IrpContext, */
     IN PIRP Irp
     )
 {
-    DbgPrint("FuseCommonQueryInformation\n");
-    return STATUS_SUCCESS;
+    NTSTATUS Status;
+
+    PIO_STACK_LOCATION IrpSp;
+
+    PFILE_OBJECT FileObject;
+
+    LONG Length;
+    FILE_INFORMATION_CLASS FileInformationClass;
+    PVOID Buffer;
+
+    TYPE_OF_OPEN TypeOfOpen;
+    PVCB Vcb;
+    PFCB Fcb;
+    PCCB Ccb;
+
+    BOOLEAN FcbAcquired;
+
+    PFILE_ALL_INFORMATION AllInfo;
+
+    //
+    //  Get the current stack location
+    //
+
+    IrpSp = IoGetCurrentIrpStackLocation( Irp );
+
+    FileObject = IrpSp->FileObject;
+
+    //
+    //  Reference our input parameters to make things easier
+    //
+
+    Length = (LONG)IrpSp->Parameters.QueryFile.Length;
+    FileInformationClass = IrpSp->Parameters.QueryFile.FileInformationClass;
+    Buffer = Irp->AssociatedIrp.SystemBuffer;
+
+    //
+    //  Decode the file object
+    //
+
+    TypeOfOpen = FuseDecodeFileObject( FileObject, &Vcb, &Fcb, &Ccb );
+    Status = STATUS_SUCCESS;
+
+        //
+        //  Case on the type of open we're dealing with
+        //
+
+        switch (TypeOfOpen) {
+
+        case UserVolumeOpen:
+
+            //
+            //  We cannot query the user volume open.
+            //
+
+            Status = STATUS_INVALID_PARAMETER;
+            break;
+
+        case UserFileOpen:
+
+        case UserDirectoryOpen:
+
+        case DirectoryFile:
+
+            switch (FileInformationClass) {
+
+            case FileAllInformation:
+
+            case FileBasicInformation:
+
+            case FileStandardInformation:
+
+            case FileInternalInformation:
+
+            case FileEaInformation:
+
+            case FilePositionInformation:
+
+            case FileNameInformation:
+
+            case FileAlternateNameInformation:
+
+            case FileNetworkOpenInformation:
+
+                FuseFsdQueryInformation(Buffer, Irp);
+                break;
+
+            default:
+
+                Status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+
+            break;
+ 
+        default:
+
+            Status = STATUS_INVALID_PARAMETER;
+            break;
+        }
+
+        //
+        //  If we overflowed the buffer, set the length to 0 and change the
+        //  status to STATUS_BUFFER_OVERFLOW.
+        //
+
+        if ( Length < 0 ) {
+
+            Status = STATUS_BUFFER_OVERFLOW;
+
+            Length = 0;
+        }
+
+        //
+        //  Set the information field to the number of bytes actually filled in
+        //  and then complete the request
+        //
+
+        Irp->IoStatus.Information = IrpSp->Parameters.QueryFile.Length - Length;
+
+    return Status;
 }
 
 NTSTATUS
@@ -421,7 +540,7 @@ FuseCommonQueryVolumeInfo (
 
         case FileFsVolumeInformation:
 		
-			Status = FuseQueryFsVolumeInfo(Buffer, &Length);
+            Status = FuseQueryFsVolumeInfo(Buffer, &Length);
             break;
 
         case FileFsSizeInformation:

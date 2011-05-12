@@ -100,7 +100,7 @@ typedef CSHORT NODE_BYTE_SIZE;
 #define FAT_BUG_CHECK_WORKQUE            (0x00200000)
 #define FAT_BUG_CHECK_WRITE              (0x00210000)
 
-#define FatBugCheck(A,B,C) { KeBugCheckEx(FAT_FILE_SYSTEM, BugCheckFileId | __LINE__, A, B, C ); }
+#define FuseBugCheck(A,B,C) { KeBugCheckEx(FAT_FILE_SYSTEM, BugCheckFileId | __LINE__, A, B, C ); }
 
 
 //
