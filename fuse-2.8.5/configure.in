@@ -1,3 +1,6 @@
+dnl Warning, you will need gettext-devel (Redhat) or its equivalent installed in
+dnl order to reconfigure this. (The file /usr/share/aclocal/iconv.m4 is needed.)
+
 AC_INIT(fuse, 2.8.5)
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
@@ -57,7 +60,7 @@ AC_CHECK_FUNCS([fork setxattr fdatasync])
 AC_CHECK_MEMBERS([struct stat.st_atim])
 AC_CHECK_MEMBERS([struct stat.st_atimespec])
 
-libfuse_libs="-pthread"
+libfuse_libs="-pthread -lntdll"
 LIBS=
 AC_SEARCH_LIBS(dlopen, [dl])
 AC_SEARCH_LIBS(clock_gettime, [rt])

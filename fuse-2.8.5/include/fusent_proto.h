@@ -17,6 +17,11 @@
 #include <ddk/winddk.h>
 #include <stdint.h>
 
+// NtFsControlFile major function codes
+#define IRP_FUSE_MOUNT  0x1337
+#define IRP_FUSE_MODULE_RESPONSE 0x1338
+#define IRP_FUSE_MODULE_REQUEST 0x1339
+
 //
 // Requests from Kernel to Userspace
 //

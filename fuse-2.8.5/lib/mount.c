@@ -31,10 +31,6 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/mount.h>
-#include <windows.h>
-#include <ddk/ntapi.h>
-#include <ddk/ntifs.h>
-#include <../ntcommon/ntproto.h>
 
 #define FUSERMOUNT_PROG		"fusermount"
 #define FUSE_COMMFD_ENV		"_FUSE_COMMFD"
@@ -410,25 +406,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			  const char *mnt_opts)
 {
 	printf("fuse_mount_sys\n");
-
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    UNICODE_STRING DeviceString;
-	const WCHAR* DeviceName = L"\\Device\\Fuse";
-    HANDLE FuseHandle;
-    NTSTATUS Status;
-    IO_STATUS_BLOCK IoStatus;
-    FUSENT_MOUNT MountRequest;
-
-    RtlInitUnicodeString(&DeviceString, DeviceName);
-    InitializeObjectAttributes(&ObjectAttributes, &DeviceString, OBJ_INHERIT, NULL, NULL);
 	
-    Status = NtCreateFile(&FuseHandle, FILE_READ_DATA | FILE_WRITE_DATA, &ObjectAttributes, &IoStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN, FILE_NON_DIRECTORY_FILE, NULL, 0);
-    printf("Status of NtCreateFile is %ld\n", Status);
-    printf("Status stored in IoStatus is %ld\n", IoStatus.Status);
-
-    
-
-    /*
 	char tmp[128];
 	const char *devname = "/dev/fuse";
 	char *source = NULL;
@@ -536,8 +514,6 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			goto out_umount;
 	}
 
-#endif // !__CYGWIN__ 
-
 	free(type);
 	free(source);
 
@@ -550,7 +526,6 @@ out_close:
 	free(source);
 	close(fd);
 	return res;
-    */
 }
 #endif
 

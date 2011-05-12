@@ -33,6 +33,7 @@
 #include <sys/param.h>
 #include <sys/uio.h>
 #include <sys/time.h>
+#include <Windows.h>
 
 #define FUSE_DEFAULT_INTR_SIGNAL SIGUSR1
 
