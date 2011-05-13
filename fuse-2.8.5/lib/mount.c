@@ -616,6 +616,7 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	OBJECT_ATTRIBUTES oa;
 	InitializeObjectAttributes(&oa, &unidev, 0, NULL, NULL);
 
+	// Open the \\Device\\Fuse\\Blah handle
 	IO_STATUS_BLOCK iosb;
 	NTSTATUS stat = NtCreateFile(fd, FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE,
 			&oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL,
@@ -626,6 +627,15 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 
 	if (stat != STATUS_SUCCESS) {
 		fprintf(stderr, "fusent: failed to open device file (0x%08x)\n", (unsigned)stat);
+		goto out;
+	}
+
+	// Send "mount" signal to kernel module
+	stat = NtFsControlFile(fd, NULL, NULL, NULL, &iosb, IRP_FUSE_MOUNT, NULL, 0, NULL, 0);
+
+	if (stat != STATUS_SUCCESS) {
+		fprintf(stderr, "fusent: mount ACK failed (0x%08x)\n", (unsigned)stat);
+		CloseHandle(fd);
 		goto out;
 	}
 
