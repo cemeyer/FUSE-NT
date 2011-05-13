@@ -37,12 +37,12 @@
 // FUSENT_RESP in its buffer
 #define IRP_FUSE_MODULE_RESPONSE 0x1338
 
+
 //
 // Requests from Kernel to Userspace
 //
 
 typedef struct _FUSENT_REQ {
-    ULONG tag;
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	IRP irp;
@@ -50,7 +50,6 @@ typedef struct _FUSENT_REQ {
 } FUSENT_REQ;
 
 typedef struct _FUSENT_CREATE_REQ {
-    ULONG tag;
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	IRP irp;
@@ -66,7 +65,6 @@ void fusent_decode_request_create(FUSENT_CREATE_REQ *req, uint32_t *outfnamelen,
 		uint16_t **outfnamep);
 
 typedef struct _FUSENT_WRITE_REQ {
-    ULONG tag;
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	IRP irp;
@@ -95,12 +93,11 @@ typedef struct _FUSENT_MOUNT { // weird special-case "response"
 } FUSENT_MOUNT;
 
 typedef struct _FUSENT_RESP {
-    ULONG tag;
 	PIRP pirp;
 	PFILE_OBJECT fop;
 	int error; // all high-level fuse operations return int
 		   // negative is error (-errno); zero is OK
-	NTSTATUS status;
+	NSTATUS status;
 	union {
 		struct {
 			uint32_t buflen;
