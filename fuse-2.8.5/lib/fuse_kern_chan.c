@@ -94,9 +94,10 @@ static int fuse_kern_chan_send(struct fuse_chan *ch, const struct iovec iov[],
 		// Copy all the io vectors to a single buf:
 		char *buf = malloc(total);
 		for (io = 0; io < count; io ++) {
-			if (!iov[io].iov_len) continue;
-			memcpy(buf + idx, iov[io].iov_base, iov[io].iov_len);
-			idx += iov_len;
+			size_t iolen = iov[io].iov_len;
+			if (!iolen) continue;
+			memcpy(buf + idx, iov[io].iov_base, iolen);
+			idx += iolen;
 		}
 
 		NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb,

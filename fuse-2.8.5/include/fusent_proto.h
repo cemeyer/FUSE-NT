@@ -16,6 +16,7 @@
 #include <ddk/ntddk.h>
 #include <ddk/winddk.h>
 #include <stdint.h>
+#include <ddk/ntifs.h>
 
 //
 // NtFsControlFile major function codes
@@ -97,7 +98,7 @@ typedef struct _FUSENT_RESP {
 	PFILE_OBJECT fop;
 	int error; // all high-level fuse operations return int
 		   // negative is error (-errno); zero is OK
-	NSTATUS status;
+	NTSTATUS status;
 	union {
 		struct {
 			uint32_t buflen;
