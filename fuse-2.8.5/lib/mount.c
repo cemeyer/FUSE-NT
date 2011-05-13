@@ -600,8 +600,8 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	size_t devlen = strlen(devnameb);
 	WCHAR devnamebwc[FUSE_DEV_MAXLEN];
 
-	if (fusent_transcode(devnameb, devlen, devnamebwc, FUSE_DEV_MAXLEN,
-				"US-ASCII", "UTF-16LE") != devlen) {
+	if (fusent_transcode(devnameb, devlen, devnamebwc, sizeof(WCHAR) * FUSE_DEV_MAXLEN,
+				"US-ASCII", "UTF-16LE") != devlen * sizeof(WCHAR)) {
 		fprintf(stderr, "fusent: error transcoding devname (`%s') to WCHAR\n",
 				devnameb);
 		goto out;

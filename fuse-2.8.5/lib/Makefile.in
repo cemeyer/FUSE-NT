@@ -77,7 +77,7 @@ am__libfuse_la_SOURCES_DIST = fuse.c fuse_i.h fuse_kern_chan.c \
 	fuse_mt.c fuse_opt.c fuse_session.c fuse_signals.c \
 	cuse_lowlevel.c helper.c modules/subdir.c modules/iconv.c \
 	mount.c mount_util.c mount_util.h mount_bsd.c st.c \
-	fusent_irpdecode.c fusent_proto.c
+	fusent_routines.c fusent_proto.c
 @ICONV_TRUE@am__objects_1 = iconv.lo
 @BSD_FALSE@am__objects_2 = mount.lo mount_util.lo
 @BSD_TRUE@am__objects_2 = mount_bsd.lo
@@ -85,7 +85,7 @@ am_libfuse_la_OBJECTS = fuse.lo fuse_kern_chan.lo fuse_loop.lo \
 	fuse_loop_mt.lo fuse_lowlevel.lo fuse_mt.lo fuse_opt.lo \
 	fuse_session.lo fuse_signals.lo cuse_lowlevel.lo helper.lo \
 	subdir.lo $(am__objects_1) $(am__objects_2) st.lo \
-	fusent_irpdecode.lo fusent_proto.lo
+	fusent_routines.lo fusent_proto.lo
 libfuse_la_OBJECTS = $(am_libfuse_la_OBJECTS)
 libfuse_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
@@ -264,7 +264,7 @@ libfuse_la_SOURCES = \
 	$(iconv_source)		\
 	$(mount_source)		\
 	st.c			\
-	fusent_irpdecode.c	\
+	fusent_routines.c	\
 	fusent_proto.c
 
 libfuse_la_LDFLAGS = @libfuse_libs@ -version-number 2:8:5 \
@@ -359,7 +359,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fuse_opt.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fuse_session.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fuse_signals.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fusent_irpdecode.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fusent_routines.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fusent_proto.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/helper.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/iconv.Plo@am__quote@

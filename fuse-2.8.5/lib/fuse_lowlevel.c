@@ -15,7 +15,7 @@
 
 #ifdef __CYGWIN__
 # include "fusent_proto.h"
-# include "fusent_irpdecode.h"
+# include "fusent_routines.h"
 # include "st.h"
 
 # include <ddk/ntifs.h>
