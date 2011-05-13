@@ -36,6 +36,10 @@ struct helper_opts {
 	char *mountpoint;
 };
 
+#ifdef __CYGWIN__
+extern const char *fusent_argv0;
+#endif
+
 #define FUSE_HELPER_OPT(t, p) { t, offsetof(struct helper_opts, p), 1 }
 
 static const struct fuse_opt fuse_helper_opts[] = {
@@ -351,6 +355,7 @@ static int fuse_main_common(int argc, char *argv[],
 	int res;
 
 #ifdef __CYGWIN__
+	fusent_argv0 = strdup(argv[0]);
 	fusent_translate_setup();
 #endif
 	fuse = fuse_setup_common(argc, argv, op, op_size, &mountpoint,
@@ -366,6 +371,7 @@ static int fuse_main_common(int argc, char *argv[],
 	fuse_teardown_common(fuse, mountpoint);
 #ifdef __CYGWIN__
 	fusent_translate_teardown();
+	free(fusent_argv0);
 #endif
 	if (res == -1)
 		return 1;

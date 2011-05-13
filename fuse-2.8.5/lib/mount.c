@@ -70,6 +70,10 @@ struct mount_opts {
 	char *kernel_opts;
 };
 
+#ifdef __CYGWIN__
+char *fusent_argv0;
+#endif
+
 #define FUSE_MOUNT_OPT(t, p) { t, offsetof(struct mount_opts, p), 1 }
 
 static const struct fuse_opt fuse_mount_opts[] = {
@@ -584,10 +588,30 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 		goto out;
 	}
 
+# define FUSE_DEV_MAXLEN 80
+	char devnameb[FUSE_DEV_MAXLEN];
+	if (snprintf(devnameb, FUSE_DEV_MAXLEN, "\\Device\\Fuse\\%s-%d",
+				fusent_argv0, getpid()) > FUSE_DEV_MAXLEN) {
+		fprintf(stderr, "fusent: argv[0] + pid is larger than %d chars (`%s-%d')\n",
+				FUSE_DEV_MAXLEN-1, fusent_argv0, getpid());
+		goto out;
+	}
+
+	size_t devlen = strlen(devnameb);
+	WCHAR devnamebwc[FUSE_DEV_MAXLEN];
+
+	if (fusent_transcode(devnameb, devlen, devnamebwc, FUSE_DEV_MAXLEN,
+				"US-ASCII", "UTF-16LE") != devlen) {
+		fprintf(stderr, "fusent: error transcoding devname (`%s') to WCHAR\n",
+				devnameb);
+		goto out;
+	}
+
+	// Null-terminate for RtlInitUnicodeString
+	devnamebwc[devlen] = (WCHAR)0;
+
 	UNICODE_STRING unidev;
-	// TODO template this out; swprintf definitely doesn't work.
-	const WCHAR *devname = L"\\Device\\Fuse\\TESTTESTTEST";
-	RtlInitUnicodeString(&unidev, devname);
+	RtlInitUnicodeString(&unidev, devnamebwc);
 
 	OBJECT_ATTRIBUTES oa;
 	InitializeObjectAttributes(&oa, &unidev, 0, NULL, NULL);
@@ -605,7 +629,7 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 		goto out;
 	}
 
-	DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, "\\Device\\Fuse\\TESTTESTTEST");
+	DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, devnameb);
 #else
 	res = fuse_mount_sys(mountpoint, &mo, mnt_opts);
 	if (res == -2) {
