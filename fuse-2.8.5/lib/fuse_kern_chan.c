@@ -87,7 +87,7 @@ static int fuse_kern_chan_send(struct fuse_chan *ch, const struct iovec iov[],
 #if defined __CYGWIN__
 		IO_STATUS_BLOCK iosb;
 		int io;
-		size_t total, idx = 0;
+		size_t total = 0, idx = 0;
 		for (io = 0; io < count; io ++)
 			total += iov[io].iov_len;
 
