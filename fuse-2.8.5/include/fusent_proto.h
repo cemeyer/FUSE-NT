@@ -17,10 +17,26 @@
 #include <ddk/winddk.h>
 #include <stdint.h>
 
+//
 // NtFsControlFile major function codes
+//
+
+// The control code for a request by a module to the driver asking the
+// driver to allocate any necessary structures before the module assigns
+// itself a drive letter
 #define IRP_FUSE_MOUNT  0x1337
-#define IRP_FUSE_MODULE_RESPONSE 0x1338
+
+// The control code for a request for work by a module to the driver.
+// The driver takes requests for work from modules and assigns userspace
+// requests to them
 #define IRP_FUSE_MODULE_REQUEST 0x1339
+
+// The control code for a response from a module to the driver. Whenever a
+// module finishes a create, read, write, etc. as requested by a userspace
+// application, it calls down to the driver with this control code and a
+// FUSENT_RESP in its buffer
+#define IRP_FUSE_MODULE_RESPONSE 0x1338
+
 
 //
 // Requests from Kernel to Userspace
