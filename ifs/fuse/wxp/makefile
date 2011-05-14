@@ -14,17 +14,5 @@ Notes:
 
 !ENDIF
 
-!if "$(DDK_TARGET_OS)"=="Win2K"
-!   message This sample is not intended to target the Windows 2000 platform.
-!elseif "$(DDK_TARGET_OS)"=="WinXP"
-!   INCLUDE $(NTMAKEENV)\makefile.def
-!elseif "$(DDK_TARGET_OS)"=="WinNET"
-!   message This sample is not intended to target the Windows .NET platform.
-!elseif "$(DDK_TARGET_OS)"=="WinLH"
-!   message This sample is not intended to target the Windows LONGHORN platform.
-!elseif "$(DDK_TARGET_OS)"=="Win7"
-!   message This sample is not intended to target the Windows 7 platform.
-!else
-!   message Unknown Target Environment: $(DDK_TARGET_OS)
-!endif
+!INCLUDE $(NTMAKEENV)\makefile.def
 
