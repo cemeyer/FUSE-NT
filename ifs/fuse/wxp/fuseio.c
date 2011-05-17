@@ -13,9 +13,438 @@ Abstract:
 --*/
 
 #include <ntdef.h>
+#include <NtStatus.h>
+#include <Ntstrsafe.h>
 #include "fuseprocs.h"
-#include "ntproto.h"
+#include "fusent_proto.h"
+#include "hashmap.h"
 #include "fusestruc.h"
+
+NTSTATUS
+FuseAddUserspaceIrp (
+    IN PIRP Irp,
+    IN PIO_STACK_LOCATION IrpSp
+    );
+
+BOOLEAN
+FuseAddIrpToModuleList (
+    IN PIRP Irp,
+    IN PMODULE_STRUCT ModuleStruct,
+    IN BOOLEAN AddToModuleList
+    );
+
+VOID
+FuseCheckForWork (
+    IN PMODULE_STRUCT ModuleStruct
+    );
+
+NTSTATUS
+FuseCopyResponse (
+    IN PMODULE_STRUCT ModuleStruct,
+    IN PIO_STACK_LOCATION IrpSp
+    );
+
+//
+//  This hash map implementation uses linear probing, which
+//  is not very fast for densely populated maps, but we set
+//  the initial size of the map to be large enough so that
+//  the type of probing is somewhat irrelevant
+//
+hashmap ModuleMap;
+
+NTSTATUS
+FuseAddUserspaceIrp (
+    IN PIRP Irp,
+    IN PIO_STACK_LOCATION IrpSp
+    )
+
+{
+    NTSTATUS Status;
+    WCHAR* FileName = IrpSp->FileObject->FileName.Buffer + 1;
+    WCHAR* ModuleName;
+    WCHAR* BackslashPosition;
+    PMODULE_STRUCT ModuleStruct;
+
+    DbgPrint("Adding userspace IRP to queue for file %S\n", FileName);
+
+    //
+    //  First, check if there is an entry in the hash map for the module.
+    //  Shift FileName by one WCHAR so that we don't read the initial \
+    //
+
+    BackslashPosition = wcsstr(FileName, L"\\");
+    if(!BackslashPosition) {
+        ModuleName = FileName;
+    } else {
+        ULONG ModuleNameLength = BackslashPosition - FileName;
+        ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
+        memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
+        ModuleName[ModuleNameLength] = '\0';
+    }
+
+    DbgPrint("Parsed module name for userspace request is %S\n", ModuleName);
+
+    ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
+    if(!ModuleStruct) {
+        DbgPrint("No entry in map found for module %S. Completing request\n", ModuleName);
+
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        Status = STATUS_SUCCESS;
+    } else {
+        DbgPrint("Found entry in map for module %S. Adding userspace IRP to module queue\n", ModuleName);
+
+        FuseAddIrpToModuleList(Irp, ModuleStruct, FALSE);
+
+        //
+        //  Mark the request as status pending. The module thread that calls
+        //  NtFsControlFile with a response will complete it
+        //
+
+        IoMarkIrpPending(Irp);
+        Status = STATUS_PENDING;
+    }
+
+    //
+    //  If we allocated the module name string in memory, free it
+    //
+
+    if(ModuleName != FileName) {
+        ExFreePool(ModuleName);
+    }
+
+    return Status;
+}
+
+BOOLEAN
+FuseAddIrpToModuleList (
+    IN PIRP Irp,
+    IN PMODULE_STRUCT ModuleStruct,
+    IN BOOLEAN AddToModuleList
+    )
+//
+//  Adds the given IRP to the module IRP list if the AddToModuleList flag is on, and
+//  adds the given IRP to the userspace IRP list otherwise. Validates the user buffer
+//  of module IRPs and returns FALSE if the validation fails, TRUE otherwise
+//
+{
+    DbgPrint("Adding IRP to queue for module %S from a %s request\n",
+        ModuleStruct->ModuleName,
+        (AddToModuleList ? "module" : "userspace"));
+
+    if(AddToModuleList) {
+        ULONG ExpectedBufferLength = 0;
+
+        __try {
+
+            //
+            //  If we are adding a module IRP, validate its user buffer first
+            //
+
+            PIO_STACK_LOCATION ModuleIrpSp = IoGetCurrentIrpStackLocation(Irp);
+            
+            PWSTR ModuleName = ModuleStruct->ModuleName;
+            ULONG FileNameLength = wcslen(ModuleName) * (sizeof(WCHAR) + 1);
+            ULONG StackLength = Irp->StackCount * sizeof(IO_STACK_LOCATION);
+            ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
+
+            ProbeForWrite(Irp->UserBuffer, ExpectedBufferLength, 0);
+
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            
+            //
+            //  Bad buffer
+            //
+
+            DbgPrint("Module %S supplied a bad request buffer. Expected size: %d\n", ModuleStruct->ModuleName, ExpectedBufferLength);
+            
+            return FALSE;
+        }
+    }
+
+    //
+    //  Acquire the lock for the module struct
+    //
+
+    ExAcquireFastMutex(&ModuleStruct->ModuleLock);
+
+    __try {
+        //
+        //  Add to the list specified by Module--TRUE -> module list, FALSE -> userspace list
+        //
+
+        PIRP_LIST LastEntry = AddToModuleList ? ModuleStruct->ModuleIrpListEnd : ModuleStruct->UserspaceIrpListEnd;
+        if(!LastEntry) {
+
+            //
+            //  If the first entry in the list is NULL, replace it with a new entry
+            //
+
+            if(AddToModuleList) {
+                ModuleStruct->ModuleIrpList = (PIRP_LIST) ExAllocatePool(PagedPool, sizeof(IRP_LIST));
+                LastEntry = ModuleStruct->ModuleIrpList;
+            } else {
+                ModuleStruct->UserspaceIrpList = (PIRP_LIST) ExAllocatePool(PagedPool, sizeof(IRP_LIST));
+                LastEntry = ModuleStruct->UserspaceIrpList;
+            }
+        } else {
+
+            //
+            //  Insert the new entry at the end of the list
+            //
+
+            LastEntry->Next = (PIRP_LIST) ExAllocatePool(PagedPool, sizeof(IRP_LIST));
+            LastEntry = LastEntry->Next;
+        }
+
+        //
+        //  Set the fields of the new entry in the IRP list
+        //
+
+        LastEntry->Irp = Irp;
+        LastEntry->Next = NULL;
+
+        if(AddToModuleList) {
+            ModuleStruct->ModuleIrpListEnd = LastEntry;
+        } else {
+            ModuleStruct->UserspaceIrpListEnd = LastEntry;
+        }
+    } __finally {
+        ExReleaseFastMutex(&ModuleStruct->ModuleLock);
+    }
+
+    DbgPrint("Successfully added %s request IRP to queue\n", (AddToModuleList ? "module" : "userspace"));
+
+    return TRUE;
+}
+
+VOID
+FuseCheckForWork (
+    IN PMODULE_STRUCT ModuleStruct
+    )
+{
+    //
+    //  Check if there is both a userspace request and a module
+    //  IRP to which to hand it off
+    //
+
+    if(ModuleStruct->ModuleIrpList && ModuleStruct->UserspaceIrpList) {
+
+        ExAcquireFastMutex(&ModuleStruct->ModuleLock);
+
+        __try {
+
+            //
+            //  Perform the check again now that we have the lock
+            //
+
+            while(ModuleStruct->ModuleIrpList && ModuleStruct->UserspaceIrpList) {
+                PIRP_LIST ModuleIrpListEntry = ModuleStruct->ModuleIrpList;
+                PIRP_LIST UserspaceIrpListEntry = ModuleStruct->UserspaceIrpList;
+                PIRP ModuleIrp = ModuleIrpListEntry->Irp;
+                PIRP UserspaceIrp = UserspaceIrpListEntry->Irp;
+                PIO_STACK_LOCATION UserspaceIrpSp;
+                FUSENT_REQ* FuseNtReq;
+                PULONG FileNameLengthField;
+
+                PWSTR ModuleName = ModuleStruct->ModuleName;
+                ULONG FileNameLength = wcslen(ModuleName) * sizeof(WCHAR);
+                ULONG StackLength = UserspaceIrp->StackCount * sizeof(IO_STACK_LOCATION);
+                ULONG ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
+
+                DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n", ModuleName);
+
+                //
+                //  Remove the head entry from the module IRP queue
+                //
+
+                ModuleStruct->ModuleIrpList = ModuleIrpListEntry->Next;
+
+                //
+                //  If we removed the first entry of the queue, update the end
+                //  pointer to NULL so that it is not pointing to an invalid entry
+                //
+
+                if(!ModuleStruct->ModuleIrpList) {
+                    ModuleStruct->ModuleIrpListEnd = NULL;
+                }
+
+                //
+                //  Remove the head IRP from the userspace IRP queue
+                //
+
+                ModuleStruct->UserspaceIrpList = UserspaceIrpListEntry->Next;
+
+                //
+                //  If we removed the first entry of the queue, update the end
+                //  pointer to NULL so that it is not pointing to an invalid entry
+                //
+
+                if(!ModuleStruct->UserspaceIrpList) {
+                    ModuleStruct->UserspaceIrpListEnd = NULL;
+                }
+
+                //
+                //  Fill out the FUSE module request using the userspace IRP
+                //
+
+                UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
+
+                FuseNtReq = (FUSENT_REQ*) ModuleIrp->UserBuffer;
+
+                FuseNtReq->pirp = UserspaceIrp;
+                FuseNtReq->fop = UserspaceIrpSp->FileObject;
+                FuseNtReq->irp = *UserspaceIrp;
+                memcpy(FuseNtReq->iostack, UserspaceIrp + 1, StackLength);
+
+                FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
+                *FileNameLengthField = FileNameLength;
+
+                memcpy(FileNameLengthField + 1, ModuleName, FileNameLength);
+
+                //
+                //  Add the userspace IRP to the list of outstanding IRPs (i.e. the IRPs
+                //  for which the module has yet to send a reply)
+                //
+
+                if(ModuleStruct->OutstandingIrpListEnd) {
+                    ModuleStruct->OutstandingIrpListEnd->Next = UserspaceIrpListEntry;
+                    ModuleStruct->OutstandingIrpListEnd = ModuleStruct->OutstandingIrpListEnd->Next;
+                } else {
+                    ModuleStruct->OutstandingIrpList = UserspaceIrpListEntry;
+                    ModuleStruct->OutstandingIrpListEnd = ModuleStruct->OutstandingIrpList;
+                }
+
+                //
+                //  Free the module IRP entry from memory
+                //
+
+                ExFreePool(ModuleIrpListEntry);
+
+                //
+                //  Complete the module's IRP to signal that the module should process it
+                //
+
+                ModuleIrp->IoStatus.Status = STATUS_SUCCESS;
+                IoCompleteRequest(ModuleIrp, IO_NO_INCREMENT);
+            }
+        } __finally {
+            ExReleaseFastMutex(&ModuleStruct->ModuleLock);
+        }
+    }
+}
+
+NTSTATUS
+FuseCopyResponse (
+    IN PMODULE_STRUCT ModuleStruct,
+    IN PIO_STACK_LOCATION IrpSp
+    )
+//
+//  Attempt to find an outstanding userspace IRP whose pointer
+//  matches that given in the module's response. If one is found
+//  (i.e. the module's response is legitimate) then pair up the
+//  response with the userspace IRP and complete both IRPs
+//
+{
+    FUSENT_RESP* FuseNtResp = (FUSENT_RESP*) IrpSp->Parameters.FileSystemControl.Type3InputBuffer;
+    NTSTATUS Status;
+
+    __try {
+
+        PIRP UserspaceIrp;
+
+        //
+        //  First validate the user buffer
+        //
+
+        ProbeForRead(FuseNtResp, sizeof(FUSENT_RESP), 0);
+        UserspaceIrp = FuseNtResp->pirp;
+
+        //
+        //  Do *not* attempt to complete the userspace IRP until we verify that the pointer
+        //  is valid. A list of outstanding userspace IRPs is maintained for this purpose
+        //
+
+        ExAcquireFastMutex(&ModuleStruct->ModuleLock);
+
+        __try {
+            PIRP_LIST CurrentEntry = ModuleStruct->OutstandingIrpList;
+            PIRP_LIST PreviousEntry = NULL;
+            if(!CurrentEntry) {
+
+                //
+                //  The list is empty so the module's response is invalid
+                //
+
+                DbgPrint("Module %S sent a response but there are no outstanding userspace IRPs\n", ModuleStruct->ModuleName);
+
+                Status = STATUS_INVALID_DEVICE_REQUEST;
+            } else {
+                BOOLEAN MatchFound = FALSE;
+
+                while(CurrentEntry && !MatchFound) {
+                    if(CurrentEntry->Irp == UserspaceIrp) {
+                        MatchFound = TRUE;
+                    } else {
+                        PreviousEntry = CurrentEntry;
+                        CurrentEntry = CurrentEntry->Next;
+                    }
+                }
+
+                if(MatchFound) {
+
+                    DbgPrint("Match found for response from module %S. Completing userspace request\n", ModuleStruct->ModuleName);
+
+                    //
+                    //  We've found a match. Complete the userspace request
+                    //
+                    //  TODO: copy buffers
+                    UserspaceIrp->IoStatus.Status = -FuseNtResp->status;
+                    IoCompleteRequest(UserspaceIrp, IO_NO_INCREMENT);
+
+                    //
+                    //  Remove the entry from the outstanding IRP queue
+                    //
+
+                    if(PreviousEntry) {
+                        PreviousEntry->Next = PreviousEntry->Next->Next;
+                    } else {
+                        ModuleStruct->OutstandingIrpList = CurrentEntry->Next;
+                    }
+
+                    if(!CurrentEntry->Next) {
+                        ModuleStruct->OutstandingIrpListEnd = PreviousEntry;
+                    }
+
+                    //
+                    //  Free the entry from memory
+                    //
+
+                    ExFreePool(CurrentEntry);
+                } else {
+
+                    //
+                    //  No userspace IRP with an address matching that given was found,
+                    //  so the module's response is assumed to be invalid
+                    //
+
+                    DbgPrint("Module %S sent a response but no match for the userspace IRP %x was found\n", ModuleStruct->ModuleName, UserspaceIrp);
+
+                    Status = STATUS_INVALID_DEVICE_REQUEST;
+                }
+            }
+        } __finally {
+            ExReleaseFastMutex(&ModuleStruct->ModuleLock);
+        }
+
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+
+        DbgPrint("Response from %S has a bad user buffer. Expected size: %d\n", ModuleStruct->ModuleName, sizeof(FUSENT_RESP));
+
+        Status = STATUS_INVALID_USER_BUFFER;
+    }
+
+    return Status;
+}
 
 NTSTATUS
 FuseFsdFileSystemControl (
@@ -23,23 +452,128 @@ FuseFsdFileSystemControl (
     IN PIRP Irp
     )
 {
-    PIO_STACK_LOCATION IrpSp;
-    WCHAR* InMessage, *OutMessage;
-
-    IrpSp = IoGetCurrentIrpStackLocation(Irp);
-
-    InMessage = (WCHAR *) IrpSp->Parameters.FileSystemControl.Type3InputBuffer;
-    OutMessage = (WCHAR *) Irp->UserBuffer;
-
-    // outside of testing, this should be wrapped in a try-except with ProbeForRead/ProbeForWrite
-    // this isn't printing the right thing currently...
-    DbgPrint("Test program sent message: \"%S\"\n", InMessage);
-
-    wcscpy(OutMessage, L"The FUSE driver says 'hello'");
+    NTSTATUS Status;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdFileSystemControl\n");
 
-    return STATUS_SUCCESS;
+    //
+    //  When a module requests a mount, its unique name of the form
+    //  [module-name][process ID] is added to the module map and space is
+    //  allocated for the module's storage structure
+    //
+    //  Modules will call NtFsControlFile with IRP_FUSE_MODULE_REQUEST
+    //  potentially many times with many different buffers while waiting
+    //  for work from userspace applications. When work comes in in the
+    //  form of CreateFiles, ReadFiles, WriteFiles, etc., the driver hands
+    //  off requests to the module by filling out and then completing IRPs,
+    //  which signals to the module that there is work to be done
+    //
+    //  When a module completes work, it calls NtFsControlFile with
+    //  IRP_FUSE_MODULE_RESPONSE, and the IRP for the corresponding
+    //  CreateFile, ReadFile, WriteFile, etc. is filled out using the
+    //  response from the module and then completed
+    //
+
+    if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MOUNT) {
+        WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
+        PMODULE_STRUCT ModuleStruct;
+
+        DbgPrint("A mount has been requested for module %S\n", ModuleName);
+
+        //
+        //  Set up a new module struct for storing state and add it to the
+        //  module hash map
+        //
+
+        ModuleStruct = (PMODULE_STRUCT) ExAllocatePool(PagedPool, sizeof(MODULE_STRUCT));
+        RtlZeroMemory(ModuleStruct, sizeof(MODULE_STRUCT));
+        ExInitializeFastMutex(&ModuleStruct->ModuleLock);
+
+        //
+        //  Store the module's file object so that we can later verify that the
+        //  module is what is requesting or providing responses to work and not
+        //  some malicious application or rogue group member
+        //
+
+        ModuleStruct->ModuleFileObject = IrpSp->FileObject;
+        ModuleStruct->ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (wcslen(ModuleName) + 1));
+        RtlStringCchCopyW(ModuleStruct->ModuleName, sizeof(WCHAR) * (wcslen(ModuleName) + 1), ModuleName);
+        hmap_add(&ModuleMap, ModuleStruct->ModuleName, ModuleStruct);
+
+        Status = STATUS_SUCCESS;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    } else if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MODULE_REQUEST ||
+        IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MODULE_RESPONSE) {
+
+        WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
+        PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
+
+
+        //
+        //  Verify that whoever is making the request is using the same file handle that
+        //  the module initially used to set up communication
+        //
+
+        if(ModuleStruct->ModuleFileObject == IrpSp->FileObject) {
+
+            if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MODULE_REQUEST) {
+
+                DbgPrint("Received request for work from module %S\n", ModuleName);
+
+                //
+                //  Save IRP in module struct and check if there is a userspace request to give it
+                //
+
+                if(!FuseAddIrpToModuleList(Irp, ModuleStruct, TRUE)) {
+
+                    DbgPrint("Module %S supplied bad buffer; bailing\n", ModuleStruct->ModuleName);
+
+                    //
+                    //  If the addition of the IRP to the module list fails due to a bad buffer, bail out
+                    //
+
+                    Status = STATUS_INVALID_USER_BUFFER;
+                    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+                } else {
+                    FuseCheckForWork(ModuleStruct);
+
+                    Status = STATUS_PENDING;
+                    IoMarkIrpPending(Irp);
+                }
+            } else {
+
+                DbgPrint("Received response for work from module %S\n", ModuleName);
+
+                Status = FuseCopyResponse(ModuleStruct, IrpSp);
+
+                if(Status == STATUS_SUCCESS) {
+                    DbgPrint("Response for work from module %S processed successfully\n", ModuleName);
+                } else {
+                    DbgPrint("Response for work from module was unsuccessfully processed\n", ModuleName);
+                }
+
+                IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            }
+        } else {
+
+            //
+            //  Oh noes! Someone is trying to trick us into thinking that they are a FUSE module
+            //
+
+            DbgPrint("FUSE request or response received from invalid source. Original file object \
+                     pointer was %x and given file object pointer is %x for module %S\n",
+                     ModuleStruct->ModuleFileObject, IrpSp->FileObject, IrpSp->FileObject->FileName.Buffer + 1);
+
+            Status = STATUS_INVALID_PARAMETER;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        }
+    } else {
+        Status = STATUS_INVALID_PARAMETER;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    }
+
+    return Status;
 }
 
 
@@ -79,7 +613,10 @@ FuseFsdCreate (
     PIO_STACK_LOCATION IrpSp;
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    DbgPrint("FuseFsdCreate\n");
+    DbgPrint("FuseFsdCreate called on '%wZ'\n", &IrpSp->FileObject->FileName);
+
+    FuseAddUserspaceIrp(Irp, IrpSp);
+
     return STATUS_SUCCESS;
 }
 
@@ -92,7 +629,7 @@ FuseFsdRead (
     PIO_STACK_LOCATION IrpSp;
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    DbgPrint("FuseFsdRead\n");
+    DbgPrint("FuseFsdRead called on '%wZ'\n", &IrpSp->FileObject->FileName);
     return STATUS_SUCCESS;
 }
 
@@ -105,7 +642,7 @@ FuseFsdWrite (
     PIO_STACK_LOCATION IrpSp;
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    DbgPrint("FuseFsdWrite\n");
+    DbgPrint("FuseFsdWrite called on '%wZ'\n", &IrpSp->FileObject->FileName);
     return STATUS_SUCCESS;
 }
 

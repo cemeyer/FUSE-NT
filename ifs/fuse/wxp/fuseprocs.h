@@ -25,10 +25,14 @@ Abstract:
 #include "nodetype.h"
 #include "FuseStruc.h"
 #include "FuseData.h"
+#include "hashmap.h"
 
 #ifndef INLINE
 #define INLINE __inline
 #endif
+
+extern hashmap ModuleMap;
+extern hashmap UserspaceMap;
 
 // taken from fatprocs.h
 typedef enum _FUSE_FLUSH_TYPE {

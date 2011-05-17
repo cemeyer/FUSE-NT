@@ -12,7 +12,6 @@ Abstract:
 
 --*/
 
-//#include "FuseProcs.h"
 #include <ntifs.h>
 #include <ntddcdrm.h>
 #include <ntdddisk.h>
@@ -158,6 +157,15 @@ Return Value:
     ObReferenceObject (FuseFileSystemDeviceObject);
 
     //
+    //  Set up FUSE module map and userspace map. The module map
+    //  associates module names with module structs, which store
+    //  IRPs representing requests for work from the module and
+    //  from userspace applications as well as a mutex
+    //
+
+    mk_hmap(&ModuleMap, str_hash_fn, str_eq_fn, module_struct_delete);
+
+    //
     //  And return to our caller
     //
 
@@ -187,5 +195,6 @@ Return Value:
 --*/
 
 {
-    ObDereferenceObject( FuseFileSystemDeviceObject);
+    ObDereferenceObject(FuseFileSystemDeviceObject);
+    free_hmap(&ModuleMap);
 }
