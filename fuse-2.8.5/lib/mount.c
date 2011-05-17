@@ -618,12 +618,10 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 
 	// Open the \\Device\\Fuse\\Blah handle
 	IO_STATUS_BLOCK iosb;
-	NTSTATUS stat = NtCreateFile(fd, FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE,
+	NTSTATUS stat = NtCreateFile(fd, GENERIC_READ | GENERIC_WRITE,
 			&oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL,
-			FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_CREATE,
-			FILE_NO_INTERMEDIATE_BUFFERING | FILE_SYNCHRONOUS_IO_ALERT |
-			FILE_WRITE_THROUGH | FILE_NO_EA_KNOWLEDGE,
-			NULL, 0);
+			FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN,
+			FILE_WRITE_THROUGH, NULL, 0);
 
 	if (stat != STATUS_SUCCESS) {
 		fprintf(stderr, "fusent: failed to open device file (0x%08x)\n", (unsigned)stat);

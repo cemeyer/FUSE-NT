@@ -1665,7 +1665,7 @@ static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in)
 
 static inline NTSTATUS fusent_translate_errno(int errno)
 {
-	if (!errno) return STATUS_SUCCESS;
+	if (errno >= 0) return STATUS_SUCCESS;
 	return STATUS_UNSUCCESSFUL;
 }
 
