@@ -589,9 +589,19 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	}
 
 # define FUSE_DEV_MAXLEN 80
+# define FUSE_ARGV0_LEN 40
 	char devnameb[FUSE_DEV_MAXLEN];
+	char argv0name[FUSE_ARGV0_LEN];
+
+	char *slptr = strrchr(fusent_argv0, '/');
+	if (!slptr) slptr = fusent_argv0;
+	else slptr += 1; // skip slash
+
+	strncpy(argv0name, slptr, FUSE_ARGV0_LEN);
+	argv0name[FUSE_ARGV0_LEN-1] = '\0';
+
 	if (snprintf(devnameb, FUSE_DEV_MAXLEN, "\\Device\\Fuse\\%s-%d",
-				fusent_argv0, getpid()) > FUSE_DEV_MAXLEN) {
+				argv0name, getpid()) > FUSE_DEV_MAXLEN) {
 		fprintf(stderr, "fusent: argv[0] + pid is larger than %d chars (`%s-%d')\n",
 				FUSE_DEV_MAXLEN-1, fusent_argv0, getpid());
 		goto out;
