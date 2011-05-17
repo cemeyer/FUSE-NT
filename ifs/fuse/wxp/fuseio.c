@@ -76,7 +76,7 @@ FuseAddUserspaceIrp (
     if(!BackslashPosition) {
         ModuleName = FileName;
     } else {
-        ULONG ModuleNameLength = BackslashPosition - FileName;
+        ULONG ModuleNameLength = (ULONG)(BackslashPosition - FileName);
         ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
         memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
         ModuleName[ModuleNameLength] = '\0';
