@@ -2013,6 +2013,174 @@ reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
+// Handle an IRP_MJ_CLEANUP request
+static void fusent_do_cleanup(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_CLOSE request
+static void fusent_do_close(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_DEVICE_CONTROL request
+static void fusent_do_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_FILE_SYSTEM_CONTROL request
+static void fusent_do_file_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_FLUSH_BUFFERS request
+static void fusent_do_flush_buffers(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_INTERNAL_DEVICE_CONTROL request
+static void fusent_do_internal_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_PNP request
+static void fusent_do_pnp(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_POWER request
+static void fusent_do_power(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_QUERY_INFORMATION request
+static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_SET_INFORMATION request
+static void fusent_do_set_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_SHUTDOWN request
+static void fusent_do_shutdown(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
+// Handle an IRP_MJ_SYSTEM_CONTROL request
+static void fusent_do_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+	UCHAR flags = irpsp->Flags;
+	int err;
+
+	// TODO: fill in this function stub
+
+	err = ENOSYS;
+	goto reply_err_nt;
+
+reply_err_nt:
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+}
+
 // Initialize FUSE (HACK)
 static void fusent_do_init(struct fuse_ll *f)
 {
@@ -2088,6 +2256,54 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 
 		case IRP_MJ_DIRECTORY_CONTROL:
 			fusent_do_directory_control(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_CLEANUP:
+			fusent_do_cleanup(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_CLOSE:
+			fusent_do_close(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_DEVICE_CONTROL:
+			fusent_do_device_control(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_FILE_SYSTEM_CONTROL:
+			fusent_do_file_system_control(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_FLUSH_BUFFERS:
+			fusent_do_flush_buffers(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_INTERNAL_DEVICE_CONTROL:
+			fusent_do_internal_device_control(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_PNP:
+			fusent_do_pnp(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_POWER:
+			fusent_do_power(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_QUERY_INFORMATION:
+			fusent_do_query_information(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_SET_INFORMATION:
+			fusent_do_set_information(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_SHUTDOWN:
+			fusent_do_shutdown(ntreq, iosp, req);
+			break;
+
+		case IRP_MJ_SYSTEM_CONTROL:
+			fusent_do_system_control(ntreq, iosp, req);
 			break;
 
 		default:
