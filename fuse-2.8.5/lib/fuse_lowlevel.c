@@ -1669,7 +1669,7 @@ static inline NTSTATUS fusent_translate_errno(int errno)
 	return STATUS_UNSUCCESSFUL;
 }
 
-static inline void fusent_fill_resp(FUSENT_RESP *resp, PIRP pirp, PFILE_OBJECT fop, int error)
+static inline void fusent_fill_resp(FUSENT_RESP *resp, IRP *pirp, FILE_OBJECT *fop, int error)
 {
 	memset(resp, 0, sizeof(FUSENT_RESP));
 	resp->pirp = pirp;
@@ -2015,7 +2015,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_CLEANUP request
 static void fusent_do_cleanup(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2029,7 +2030,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_CLOSE request
 static void fusent_do_close(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2043,7 +2045,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_DEVICE_CONTROL request
 static void fusent_do_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2057,7 +2060,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_FILE_SYSTEM_CONTROL request
 static void fusent_do_file_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2071,7 +2075,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_FLUSH_BUFFERS request
 static void fusent_do_flush_buffers(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2085,7 +2090,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_INTERNAL_DEVICE_CONTROL request
 static void fusent_do_internal_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2099,7 +2105,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_PNP request
 static void fusent_do_pnp(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2113,7 +2120,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_POWER request
 static void fusent_do_power(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2127,7 +2135,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_QUERY_INFORMATION request
 static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2141,7 +2150,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_SET_INFORMATION request
 static void fusent_do_set_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2155,7 +2165,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_SHUTDOWN request
 static void fusent_do_shutdown(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
@@ -2169,7 +2180,8 @@ reply_err_nt:
 
 // Handle an IRP_MJ_SYSTEM_CONTROL request
 static void fusent_do_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-	UCHAR flags = irpsp->Flags;
+{
+	UCHAR flags = iosp->Flags;
 	int err;
 
 	// TODO: fill in this function stub
