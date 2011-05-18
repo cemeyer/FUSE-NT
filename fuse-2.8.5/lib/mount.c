@@ -639,7 +639,7 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	}
 
 	// Send "mount" signal to kernel module
-	stat = NtFsControlFile(fd, NULL, NULL, NULL, &iosb, IRP_FUSE_MOUNT, NULL, 0, NULL, 0);
+	stat = NtFsControlFile(*fd, NULL, NULL, NULL, &iosb, IRP_FUSE_MOUNT, NULL, 0, NULL, 0);
 
 	if (stat != STATUS_SUCCESS) {
 		fprintf(stderr, "fusent: mount ACK failed (0x%08x)\n", (unsigned)stat);
