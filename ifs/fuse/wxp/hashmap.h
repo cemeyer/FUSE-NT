@@ -91,6 +91,9 @@ BOOLEAN __hmap_add(hashmap* hmap, key in, val out);
 val __hmap_get(hashmap* hmap, key in);
 #define hmap_get(hmap, obj) __hmap_get(hmap, (key) obj)
 
+BOOLEAN __hmap_remove(hashmap* hmap, key in);
+#define hmap_remove(hmap, obj) __hmap_remove(hmap, (key) obj)
+
 #ifdef HMAP_MAKE_HASHFN
 // integer-as-key hash functions
 uint32_t int_hash_fn(key);

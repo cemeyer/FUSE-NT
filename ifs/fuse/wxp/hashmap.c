@@ -62,6 +62,34 @@ VOID free_hmap(hashmap* hmap) {
 #endif
 }
 
+uint32_t __oa_get_location(hashmap* hmap, key in) {
+    #ifdef HMAP_THREAD_SAFE
+	sem_wait(&hmap->lock);
+#endif
+
+	static uint32_t hash;
+	hash = hmap->hash_fn(in) % hmap->capacity;
+	
+	while (hmap->map[hash].v != NULL) {
+		if (hmap->eq_fn(in, hmap->map[hash].k)) {
+		#ifdef HMAP_THREAD_SAFE
+			sem_post(&hmap->lock);
+		#endif			
+			
+			return hash;
+		}
+		
+		hash = (hash + 1) % hmap->capacity;
+	}
+
+	
+#ifdef HMAP_THREAD_SAFE
+	sem_post(&hmap->lock);
+#endif
+
+    return -1;
+}
+
 // open addressed hashmap insertion function
 static VOID __oa_hmap_add(key_val_pair* map, uint32_t size, 
                           uint32_t (*hash_fn)(key),
@@ -81,37 +109,6 @@ BOOLEAN __hmap_add(hashmap* hmap, key in, val out) {
 #ifdef HMAP_THREAD_SAFE
 	sem_wait(&hmap->lock);
 #endif
-
-    // assume (at least for now) that the initial page is large
-    // enough that the hash map will not need to increase in size
-    /*
-	// performace degrades after a certain load
-	if (((float) hmap->size) / hmap->capacity > 0.70) {
-		key_val_pair* temp = (key_val_pair*) malloc(hmap->capacity * HMAP_GROWTH_RATE);
-		if (temp != NULL) {
-			hmap->capacity *= HMAP_GROWTH_RATE;
-		} else {
-		#ifdef HMAP_THREAD_SAFE
-			sem_post(&hmap->lock);
-		#endif
-			// we're out of memory
-			return FALSE;
-		}
-		
-		// re-posn all elements
-		static uint32_t it;
-		for (it=0; it < hmap->capacity; ++it) {
-			if (hmap->map[it].v != NULL) {
-				__oa_hmap_add(temp, hmap->capacity, hmap->hash_fn, in, out);
-			}
-		}
-		
-		// swap out the old map with the new one
-		free(hmap->map);
-		hmap->map = temp;
-	}
-	*/
-
 	__oa_hmap_add(hmap->map, hmap->capacity, hmap->hash_fn, in, out);
 	hmap->size += 1;
 
@@ -123,31 +120,28 @@ BOOLEAN __hmap_add(hashmap* hmap, key in, val out) {
 }
 
 val __hmap_get(hashmap* hmap, key in) {
-#ifdef HMAP_THREAD_SAFE
-	sem_wait(&hmap->lock);
-#endif
-
 	static uint32_t hash;
-	hash = hmap->hash_fn(in) % hmap->capacity;
-	
-	while (hmap->map[hash].v != NULL) {
-		if (hmap->eq_fn(in, hmap->map[hash].k)) {
-		#ifdef HMAP_THREAD_SAFE
-			sem_post(&hmap->lock);
-		#endif			
-			
-			return hmap->map[hash].v;
-		}
-		
-		hash = (hash + 1) % hmap->capacity;
-	}
+    
+    hash = __oa_get_location(hmap, in);
+    if(hash != -1) {
+        return hmap->map[hash].v;
+    } else {
+        return NULL;
+    }
+}
 
-	
-#ifdef HMAP_THREAD_SAFE
-	sem_post(&hmap->lock);
-#endif
-	
-	return NULL;
+BOOLEAN __hmap_remove(hashmap* hmap, key in) {
+    static uint32_t hash;
+    
+    hash = __oa_get_location(hmap, in);
+    if(hash != -1 && hmap->map[hash].v) {
+        hmap->del_fn(hmap->map[hash].v);
+        hmap->map[hash].k = NULL;
+
+        return TRUE;
+    } else {
+        return FALSE;
+    }
 }
 
 // Dan Bernstein's string hash function (djb2)
@@ -166,15 +160,22 @@ uint32_t str_hash_fn(key in) {
 }
 
 BOOLEAN str_eq_fn(key a, key b) {
-	return (wcscmp((WCHAR*) a, (WCHAR*) b) == 0) ? TRUE : FALSE;
+    if(!a || !b) {
+        return FALSE;
+    } else {
+	    return (wcscmp((WCHAR*) a, (WCHAR*) b) == 0) ? TRUE : FALSE;
+    }
 }
 
 VOID module_struct_delete(val VoidModuleStruct) {
     PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) VoidModuleStruct;
     PIRP_LIST CurrentEntry, NextEntry;
 
+    if(!ModuleStruct) {
+        return;
+    }
+
     ExFreePool(ModuleStruct->ModuleName);
-    ExFreePool(&ModuleStruct->ModuleLock);
 
     //
     //  Free the module and userspace IRP lists, completing each one

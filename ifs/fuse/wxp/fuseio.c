@@ -44,6 +44,11 @@ FuseCopyResponse (
     IN PIO_STACK_LOCATION IrpSp
     );
 
+BOOLEAN
+FuseCheckUnmountModule (
+    IN PIO_STACK_LOCATION IrpSp
+    );
+
 //
 //  This hash map implementation uses linear probing, which
 //  is not very fast for densely populated maps, but we set
@@ -97,11 +102,14 @@ FuseAddUserspaceIrp (
 
         //
         //  Mark the request as status pending. The module thread that calls
-        //  NtFsControlFile with a response will complete it
+        //  NtFsControlFile with a response will complete it, or if there is
+        //  a request to hand it off to right now, that request will complete it
         //
 
         IoMarkIrpPending(Irp);
         Status = STATUS_PENDING;
+
+        FuseCheckForWork(ModuleStruct);
     }
 
     //
@@ -147,7 +155,7 @@ FuseAddIrpToModuleList (
             ULONG StackLength = Irp->StackCount * sizeof(IO_STACK_LOCATION);
             ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
 
-            ProbeForWrite(Irp->UserBuffer, ExpectedBufferLength, 0);
+            ProbeForWrite(Irp->UserBuffer, ExpectedBufferLength, sizeof(CHAR));
 
         } __except(EXCEPTION_EXECUTE_HANDLER) {
             
@@ -356,7 +364,7 @@ FuseCopyResponse (
         //  First validate the user buffer
         //
 
-        ProbeForRead(FuseNtResp, sizeof(FUSENT_RESP), 0);
+        ProbeForRead(FuseNtResp, sizeof(FUSENT_RESP), sizeof(CHAR));
         UserspaceIrp = FuseNtResp->pirp;
 
         //
@@ -444,6 +452,43 @@ FuseCopyResponse (
     }
 
     return Status;
+}
+
+BOOLEAN
+FuseCheckUnmountModule (
+    IN PIO_STACK_LOCATION IrpSp
+    )
+//
+//  Check whether the closure of the file represented by the given file object pointer
+//  is an indication that a module should be unmounted. A module should be unmounted
+//  when the file handle with which it was initially mounted is closed.
+//
+//  Returns whether a module was dismounted
+//
+{
+    WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
+    PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
+
+    if(ModuleStruct && ModuleStruct->ModuleFileObject == IrpSp->FileObject) {
+
+        DbgPrint("Dismounting module %S, as the last reference to its handle has been lost\n", ModuleName);
+
+        //
+        //  The file object matches, so perform a dismount
+        //
+
+        ExAcquireFastMutex(&ModuleStruct->ModuleLock);
+
+        hmap_remove(&ModuleMap, ModuleName);
+
+        //
+        //  No need to "release" the lock, as it has been freed
+        //
+
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 NTSTATUS
@@ -600,6 +645,8 @@ FuseFsdClose (
     PIO_STACK_LOCATION IrpSp;
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
+    FuseCheckUnmountModule(IrpSp);
+
     DbgPrint("FuseFsdClose\n");
     return STATUS_SUCCESS;
 }
@@ -615,9 +662,7 @@ FuseFsdCreate (
 
     DbgPrint("FuseFsdCreate called on '%wZ'\n", &IrpSp->FileObject->FileName);
 
-    FuseAddUserspaceIrp(Irp, IrpSp);
-
-    return STATUS_SUCCESS;
+    return FuseAddUserspaceIrp(Irp, IrpSp);
 }
 
 NTSTATUS

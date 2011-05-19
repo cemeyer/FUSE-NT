@@ -14,16 +14,16 @@
 // itself a drive letter
 #define IRP_FUSE_MOUNT  0x1336
 
-// The control code for a request for work by a module to the driver.
-// The driver takes requests for work from modules and assigns userspace
-// requests to them
-#define IRP_FUSE_MODULE_REQUEST 0x1335
-
 // The control code for a response from a module to the driver. Whenever a
 // module finishes a create, read, write, etc. as requested by a userspace
 // application, it calls down to the driver with this control code and a
 // FUSENT_RESP in its buffer
 #define IRP_FUSE_MODULE_RESPONSE 0x1337
+
+// The control code for a request for work by a module to the driver.
+// The driver takes requests for work from modules and assigns userspace
+// requests to them
+#define IRP_FUSE_MODULE_REQUEST 0x1338
 
 //
 // Requests from Kernel to Userspace
