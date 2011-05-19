@@ -300,9 +300,12 @@ struct fuse *fuse_setup_common(int argc, char *argv[],
 	if (fuse == NULL)
 		goto err_unmount;
 
+	// Skip daemonizing on Cygwin for debugging:
+#ifndef __CYGWIN__
 	res = fuse_daemonize(foreground);
 	if (res == -1)
 		goto err_unmount;
+#endif
 
 	res = fuse_set_signal_handlers(fuse_get_session(fuse));
 	if (res == -1)

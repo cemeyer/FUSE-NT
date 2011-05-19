@@ -35,7 +35,7 @@ static int fuse_kern_chan_receive(struct fuse_chan **chp, char *buf,
 		return 0;
 
 	if (stat != STATUS_SUCCESS) {
-		perror("fuse: reading device");
+		fprintf(stderr, "fuse: reading device: got (%08x), expected STATUS_SUCCESS\n", stat);
 		return -EFAULT;
 	}
 
