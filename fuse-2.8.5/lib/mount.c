@@ -648,6 +648,9 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	}
 
 	DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, devnameb);
+	
+	// Declare mount a success:
+	res = 0;
 #else
 	res = fuse_mount_sys(mountpoint, &mo, mnt_opts);
 	if (res == -2) {
