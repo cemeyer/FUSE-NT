@@ -29,10 +29,25 @@ static int fuse_kern_chan_receive(struct fuse_chan **chp, char *buf,
 
 #if defined __CYGWIN__
 	IO_STATUS_BLOCK iosb;
-	NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb, IRP_FUSE_MODULE_REQUEST, NULL, 0, buf, size);
+	HANDLE ioevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), ioevent, NULL, NULL, &iosb, IRP_FUSE_MODULE_REQUEST, NULL, 0, buf, size);
 
 	if (fuse_session_exited(se))
 		return 0;
+
+	if (stat != STATUS_PENDING) {
+		CloseHandle(ioevent);
+	}
+	else {
+		DWORD waitres = WaitForSingleObject(ioevent, INFINITE);
+		CloseHandle(ioevent);
+
+		if (waitres != WAIT_OBJECT_0) {
+			fprintf(stderr, "fuse: waiting for receive() asyncio failed: (%08x)\n", waitres);
+			return -EFAULT;
+		}
+		stat = STATUS_SUCCESS;
+	}
 
 	if (stat != STATUS_SUCCESS) {
 		fprintf(stderr, "fuse: reading device: got (%08x), expected STATUS_SUCCESS\n", stat);
@@ -83,54 +98,70 @@ restart:
 static int fuse_kern_chan_send(struct fuse_chan *ch, const struct iovec iov[],
 			       size_t count)
 {
-	if (iov) {
+	if (!iov) return 0;
 #if defined __CYGWIN__
-		IO_STATUS_BLOCK iosb;
-		int io;
-		size_t total = 0, idx = 0;
-		for (io = 0; io < count; io ++)
-			total += iov[io].iov_len;
+	IO_STATUS_BLOCK iosb;
+	int io;
+	size_t total = 0, idx = 0;
+	for (io = 0; io < count; io ++)
+		total += iov[io].iov_len;
 
-		// Copy all the io vectors to a single buf:
-		char *buf = malloc(total);
-		for (io = 0; io < count; io ++) {
-			size_t iolen = iov[io].iov_len;
-			if (!iolen) continue;
-			memcpy(buf + idx, iov[io].iov_base, iolen);
-			idx += iolen;
-		}
+	// Copy all the io vectors to a single buf:
+	char *buf = malloc(total);
+	for (io = 0; io < count; io ++) {
+		size_t iolen = iov[io].iov_len;
+		if (!iolen) continue;
+		memcpy(buf + idx, iov[io].iov_base, iolen);
+		idx += iolen;
+	}
 
-		NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), NULL, NULL, NULL, &iosb,
-				IRP_FUSE_MODULE_RESPONSE, buf, total, NULL, 0);
+	HANDLE ioevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), ioevent, NULL, NULL, &iosb,
+			IRP_FUSE_MODULE_RESPONSE, buf, total, NULL, 0);
 
-		free(buf);
+	if (stat != STATUS_PENDING) {
+		CloseHandle(ioevent);
+	}
+	else {
+		DWORD waitres = WaitForSingleObject(ioevent, INFINITE);
+		CloseHandle(ioevent);
 
-		if (stat != STATUS_SUCCESS) {
-			struct fuse_session *se = fuse_chan_session(ch);
-
-			assert(se != NULL);
-
-			if (fuse_session_exited(se)) return 0;
-
-			perror("fuse: writing device");
+		if (waitres != WAIT_OBJECT_0) {
+			fprintf(stderr, "fuse: waiting for send() asyncio failed: (%08x)\n", waitres);
+			free(buf);
 			return -EFAULT;
 		}
-#else
-		ssize_t res = writev(fuse_chan_fd(ch), iov, count);
-		int err = errno;
-
-		if (res == -1) {
-			struct fuse_session *se = fuse_chan_session(ch);
-
-			assert(se != NULL);
-
-			/* ENOENT means the operation was interrupted */
-			if (!fuse_session_exited(se) && err != ENOENT)
-				perror("fuse: writing device");
-			return -err;
-		}
-#endif
+		stat = STATUS_SUCCESS;
 	}
+
+	free(buf);
+
+	if (stat != STATUS_SUCCESS) {
+		struct fuse_session *se = fuse_chan_session(ch);
+
+		assert(se != NULL);
+
+		if (fuse_session_exited(se)) return 0;
+
+		fprintf(stderr, "fuse: reading device: got (%08x), expected STATUS_SUCCESS\n", stat);
+
+		return -EFAULT;
+	}
+#else
+	ssize_t res = writev(fuse_chan_fd(ch), iov, count);
+	int err = errno;
+
+	if (res == -1) {
+		struct fuse_session *se = fuse_chan_session(ch);
+
+		assert(se != NULL);
+
+		/* ENOENT means the operation was interrupted */
+		if (!fuse_session_exited(se) && err != ENOENT)
+			perror("fuse: writing device");
+		return -err;
+	}
+#endif
 	return 0;
 }
 
