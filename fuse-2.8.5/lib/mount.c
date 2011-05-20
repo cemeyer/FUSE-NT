@@ -647,7 +647,13 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 		goto out;
 	}
 
-	DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, devnameb);
+	if (!DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, devnameb)) {
+		// Drive letter creation failed:
+		DWORD winerr = GetLastError();
+		fprintf(stderr, "fusent: got error mounting device on `%s': %08x\n",
+				mountpoint, winerr);
+		goto out;
+	}
 	
 	// Declare mount a success:
 	res = 0;
