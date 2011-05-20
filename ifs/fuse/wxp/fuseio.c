@@ -66,9 +66,11 @@ FuseAddUserspaceIrp (
 {
     NTSTATUS Status;
     WCHAR* FileName = IrpSp->FileObject->FileName.Buffer + 1;
+	PUNICODE_STRING FileNameString = &IrpSp->FileObject->FileName;
     WCHAR* ModuleName;
-    WCHAR* BackslashPosition;
+    WCHAR* BackslashPosition = NULL;
     PMODULE_STRUCT ModuleStruct;
+	BOOLEAN AllocatedModuleName = FALSE;
 
     DbgPrint("Adding userspace IRP to queue for file %S\n", FileName);
 
@@ -77,15 +79,22 @@ FuseAddUserspaceIrp (
     //  Shift FileName by one WCHAR so that we don't read the initial \
     //
 
-    BackslashPosition = wcsstr(FileName, L"\\");
-    if(!BackslashPosition) {
-        ModuleName = FileName;
-    } else {
-        ULONG ModuleNameLength = (ULONG)(BackslashPosition - FileName);
-        ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
-        memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
-        ModuleName[ModuleNameLength] = '\0';
-    }
+    if (FileNameString->Length > 0) {
+	    BackslashPosition = wcsstr(FileName, L"\\");
+		
+		if(!BackslashPosition) {
+			ModuleName = FileName;
+		} else {
+			ULONG ModuleNameLength = (ULONG)(BackslashPosition - FileName);
+			ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
+			memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
+			ModuleName[ModuleNameLength] = '\0';
+			AllocatedModuleName = TRUE;
+		}
+	}
+    else {
+		ModuleName = L"";
+	}
 
     DbgPrint("Parsed module name for userspace request is %S\n", ModuleName);
 
@@ -116,7 +125,7 @@ FuseAddUserspaceIrp (
     //  If we allocated the module name string in memory, free it
     //
 
-    if(ModuleName != FileName) {
+    if(AllocatedModuleName) {
         ExFreePool(ModuleName);
     }
 
