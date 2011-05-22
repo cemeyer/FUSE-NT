@@ -41,6 +41,7 @@ FuseCheckForWork (
 NTSTATUS
 FuseCopyResponse (
     IN PMODULE_STRUCT ModuleStruct,
+    IN PIRP Irp,
     IN PIO_STACK_LOCATION IrpSp
     );
 
@@ -70,16 +71,21 @@ FuseAddUserspaceIrp (
     WCHAR* ModuleName;
     WCHAR* BackslashPosition = NULL;
     PMODULE_STRUCT ModuleStruct;
-	BOOLEAN AllocatedModuleName = FALSE;
 
     DbgPrint("Adding userspace IRP to queue for file %S\n", FileName);
 
     //
-    //  First, check if there is an entry in the hash map for the module.
-    //  Shift FileName by one WCHAR so that we don't read the initial \
+    //  Check if a module was opened, as opposed to just \Device\Fuse. There
+    //  is nothing to be done if the file is not on a module
     //
 
     if (FileNameString->Length > 0) {
+
+        //
+        //  First, check if there is an entry in the hash map for the module.
+        //  Shift FileName by one WCHAR so that we don't read the initial \
+        //
+
 	    BackslashPosition = wcsstr(FileName, L"\\");
 		
 		if(!BackslashPosition) {
@@ -89,44 +95,42 @@ FuseAddUserspaceIrp (
 			ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
 			memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
 			ModuleName[ModuleNameLength] = '\0';
-			AllocatedModuleName = TRUE;
 		}
-	}
-    else {
-		ModuleName = L"";
-	}
 
-    DbgPrint("Parsed module name for userspace request is %S\n", ModuleName);
+        DbgPrint("Parsed module name for userspace request is %S\n", ModuleName);
 
-    ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
-    if(!ModuleStruct) {
-        DbgPrint("No entry in map found for module %S. Completing request\n", ModuleName);
+        ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
+        if(!ModuleStruct) {
+            DbgPrint("No entry in map found for module %S. Completing request\n", ModuleName);
 
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        
+        } else {
+            DbgPrint("Found entry in map for module %S. Adding userspace IRP to module queue\n", ModuleName);
+
+            FuseAddIrpToModuleList(Irp, ModuleStruct, FALSE);
+
+            //
+            //  Mark the request as status pending. The module thread that calls
+            //  NtFsControlFile with a response will complete it, or if there is
+            //  a request to hand it off to right now, that request will complete it
+            //
+
+            IoMarkIrpPending(Irp);
+            Status = STATUS_PENDING;
+
+            FuseCheckForWork(ModuleStruct);
+        }
+
+        //
+        //  If we allocated the module name string in memory, free it
+        //
+
+        if(ModuleName != FileName) {
+            ExFreePool(ModuleName);
+        }
+	} else {
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
         Status = STATUS_SUCCESS;
-    } else {
-        DbgPrint("Found entry in map for module %S. Adding userspace IRP to module queue\n", ModuleName);
-
-        FuseAddIrpToModuleList(Irp, ModuleStruct, FALSE);
-
-        //
-        //  Mark the request as status pending. The module thread that calls
-        //  NtFsControlFile with a response will complete it, or if there is
-        //  a request to hand it off to right now, that request will complete it
-        //
-
-        IoMarkIrpPending(Irp);
-        Status = STATUS_PENDING;
-
-        FuseCheckForWork(ModuleStruct);
-    }
-
-    //
-    //  If we allocated the module name string in memory, free it
-    //
-
-    if(AllocatedModuleName) {
-        ExFreePool(ModuleName);
     }
 
     return Status;
@@ -149,30 +153,22 @@ FuseAddIrpToModuleList (
         (AddToModuleList ? "module" : "userspace"));
 
     if(AddToModuleList) {
-        ULONG ExpectedBufferLength = 0;
-
-        __try {
-
-            //
-            //  If we are adding a module IRP, validate its user buffer first
-            //
-
-            PIO_STACK_LOCATION ModuleIrpSp = IoGetCurrentIrpStackLocation(Irp);
+        ULONG ExpectedBufferLength;
+        PIO_STACK_LOCATION ModuleIrpSp = IoGetCurrentIrpStackLocation(Irp);
             
-            PWSTR ModuleName = ModuleStruct->ModuleName;
-            ULONG FileNameLength = wcslen(ModuleName) * (sizeof(WCHAR) + 1);
-            ULONG StackLength = Irp->StackCount * sizeof(IO_STACK_LOCATION);
-            ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
+        PWSTR ModuleName = ModuleStruct->ModuleName;
+        ULONG FileNameLength = wcslen(ModuleName) * (sizeof(WCHAR) + 1);
+        ULONG StackLength = Irp->StackCount * sizeof(IO_STACK_LOCATION);
+        ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
 
-            ProbeForWrite(Irp->UserBuffer, ExpectedBufferLength, sizeof(CHAR));
+        //
+        //  Check that the output buffer is large enough to contain the work request
+        //
 
-        } __except(EXCEPTION_EXECUTE_HANDLER) {
-            
-            //
-            //  Bad buffer
-            //
+        if(ModuleIrpSp->Parameters.DeviceIoControl.OutputBufferLength < ExpectedBufferLength) {
 
-            DbgPrint("Module %S supplied a bad request buffer. Expected size: %d\n", ModuleStruct->ModuleName, ExpectedBufferLength);
+            DbgPrint("Module %S supplied a bad request buffer. Required size: %d. Actual size: %d\n",
+                ModuleStruct->ModuleName, ExpectedBufferLength, ModuleIrpSp->Parameters.DeviceIoControl.OutputBufferLength);
             
             return FALSE;
         }
@@ -266,7 +262,6 @@ FuseCheckForWork (
                 PWSTR ModuleName = ModuleStruct->ModuleName;
                 ULONG FileNameLength = wcslen(ModuleName) * sizeof(WCHAR);
                 ULONG StackLength = UserspaceIrp->StackCount * sizeof(IO_STACK_LOCATION);
-                ULONG ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
 
                 DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n", ModuleName);
 
@@ -306,7 +301,7 @@ FuseCheckForWork (
 
                 UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
 
-                FuseNtReq = (FUSENT_REQ*) ModuleIrp->UserBuffer;
+                FuseNtReq = (FUSENT_REQ*) ModuleIrp->AssociatedIrp.SystemBuffer;
 
                 FuseNtReq->pirp = UserspaceIrp;
                 FuseNtReq->fop = UserspaceIrpSp->FileObject;
@@ -317,6 +312,7 @@ FuseCheckForWork (
                 *FileNameLengthField = FileNameLength;
 
                 memcpy(FileNameLengthField + 1, ModuleName, FileNameLength);
+                ModuleIrp->IoStatus.Information = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
 
                 //
                 //  Add the userspace IRP to the list of outstanding IRPs (i.e. the IRPs
@@ -353,6 +349,7 @@ FuseCheckForWork (
 NTSTATUS
 FuseCopyResponse (
     IN PMODULE_STRUCT ModuleStruct,
+    IN PIRP Irp,
     IN PIO_STACK_LOCATION IrpSp
     )
 //
@@ -362,19 +359,16 @@ FuseCopyResponse (
 //  response with the userspace IRP and complete both IRPs
 //
 {
-    FUSENT_RESP* FuseNtResp = (FUSENT_RESP*) IrpSp->Parameters.FileSystemControl.Type3InputBuffer;
     NTSTATUS Status;
 
-    __try {
+    //
+    //  First validate the user buffer
+    //
 
-        PIRP UserspaceIrp;
+    if(IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(FUSENT_RESP)) {
 
-        //
-        //  First validate the user buffer
-        //
-
-        ProbeForRead(FuseNtResp, sizeof(FUSENT_RESP), sizeof(CHAR));
-        UserspaceIrp = FuseNtResp->pirp;
+        FUSENT_RESP* FuseNtResp = (FUSENT_RESP*) Irp->AssociatedIrp.SystemBuffer;
+        PIRP UserspaceIrp = FuseNtResp->pirp;
 
         //
         //  Do *not* attempt to complete the userspace IRP until we verify that the pointer
@@ -453,9 +447,10 @@ FuseCopyResponse (
             ExReleaseFastMutex(&ModuleStruct->ModuleLock);
         }
 
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
+    } else {
 
-        DbgPrint("Response from %S has a bad user buffer. Expected size: %d\n", ModuleStruct->ModuleName, sizeof(FUSENT_RESP));
+        DbgPrint("Response from %S has a bad user buffer. Expected size: %d. Actual size: \n",
+            ModuleStruct->ModuleName, sizeof(FUSENT_RESP), IrpSp->Parameters.DeviceIoControl.InputBufferLength);
 
         Status = STATUS_INVALID_USER_BUFFER;
     }
@@ -475,26 +470,28 @@ FuseCheckUnmountModule (
 //  Returns whether a module was dismounted
 //
 {
-    WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
-    PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
+    if(IrpSp->FileObject->FileName.Length > 0) {
+        WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
+        PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
 
-    if(ModuleStruct && ModuleStruct->ModuleFileObject == IrpSp->FileObject) {
+        if(ModuleStruct && ModuleStruct->ModuleFileObject == IrpSp->FileObject) {
 
-        DbgPrint("Dismounting module %S, as the last reference to its handle has been lost\n", ModuleName);
+            DbgPrint("Dismounting module %S, as the last reference to its handle has been lost\n", ModuleName);
 
-        //
-        //  The file object matches, so perform a dismount
-        //
+            //
+            //  The file object matches, so perform a dismount
+            //
 
-        ExAcquireFastMutex(&ModuleStruct->ModuleLock);
+            ExAcquireFastMutex(&ModuleStruct->ModuleLock);
 
-        hmap_remove(&ModuleMap, ModuleName);
+            hmap_remove(&ModuleMap, ModuleName);
 
-        //
-        //  No need to "release" the lock, as it has been freed
-        //
+            //
+            //  No need to "release" the lock, as it has been freed
+            //
 
-        return TRUE;
+            return TRUE;
+        }
     }
 
     return FALSE;
@@ -599,7 +596,7 @@ FuseFsdFileSystemControl (
 
                 DbgPrint("Received response for work from module %S\n", ModuleName);
 
-                Status = FuseCopyResponse(ModuleStruct, IrpSp);
+                Status = FuseCopyResponse(ModuleStruct, Irp, IrpSp);
 
                 if(Status == STATUS_SUCCESS) {
                     DbgPrint("Response for work from module %S processed successfully\n", ModuleName);
