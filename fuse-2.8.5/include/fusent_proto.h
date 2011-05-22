@@ -19,24 +19,25 @@
 #include <ddk/ntifs.h>
 
 //
-// NtFsControlFile major function codes
+//  NtFsControlFile FSCTL codes. These functions codes are chosen to be
+//  outside of Microsoft's reserved range
 //
 
 // The control code for a request by a module to the driver asking the
 // driver to allocate any necessary structures before the module assigns
 // itself a drive letter
-#define IRP_FUSE_MOUNT  0x1336
+#define IRP_FUSE_MOUNT CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 3131, METHOD_NEITHER, FILE_ANY_ACCESS)
 
 // The control code for a response from a module to the driver. Whenever a
 // module finishes a create, read, write, etc. as requested by a userspace
 // application, it calls down to the driver with this control code and a
 // FUSENT_RESP in its buffer
-#define IRP_FUSE_MODULE_RESPONSE 0x1337
+#define IRP_FUSE_MODULE_RESPONSE CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 3132, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 // The control code for a request for work by a module to the driver.
 // The driver takes requests for work from modules and assigns userspace
 // requests to them
-#define IRP_FUSE_MODULE_REQUEST 0x1338
+#define IRP_FUSE_MODULE_REQUEST CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 3133, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 
 //
