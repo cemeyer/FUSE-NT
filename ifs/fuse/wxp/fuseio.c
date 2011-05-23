@@ -420,7 +420,7 @@ FuseCopyResponse (
                     //
                     //  We've found a match. Complete the userspace request
                     //
-                    //  TODO: copy buffers
+                    //  TODO: copy buffers for reads and writes
                     UserspaceIrp->IoStatus.Status = -FuseNtResp->status;
                     IoCompleteRequest(UserspaceIrp, IO_NO_INCREMENT);
 
@@ -443,6 +443,8 @@ FuseCopyResponse (
                     //
 
                     ExFreePool(CurrentEntry);
+
+                    Status = STATUS_SUCCESS;
                 } else {
 
                     //
@@ -611,9 +613,9 @@ FuseFsdFileSystemControl (
                 Status = FuseCopyResponse(ModuleStruct, Irp, IrpSp);
 
                 if(Status == STATUS_SUCCESS) {
-                    DbgPrint("Response for work from module %S processed successfully\n", ModuleName);
+                    DbgPrint("Response for work from module %S was processed successfully\n", ModuleName);
                 } else {
-                    DbgPrint("Response for work from module was unsuccessfully processed\n", ModuleName);
+                    DbgPrint("Response for work from module %S was unsuccessfully processed\n", ModuleName);
                 }
 
                 IoCompleteRequest(Irp, IO_NO_INCREMENT);
