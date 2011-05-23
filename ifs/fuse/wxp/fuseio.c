@@ -257,10 +257,11 @@ FuseCheckForWork (
                 PIRP UserspaceIrp = UserspaceIrpListEntry->Irp;
                 PIO_STACK_LOCATION UserspaceIrpSp;
                 FUSENT_REQ* FuseNtReq;
+                WCHAR* FileName;
+                ULONG FileNameLength;
                 PULONG FileNameLengthField;
 
                 PWSTR ModuleName = ModuleStruct->ModuleName;
-                ULONG FileNameLength = wcslen(ModuleName) * sizeof(WCHAR);
                 ULONG StackLength = UserspaceIrp->StackCount * sizeof(IO_STACK_LOCATION);
 
                 DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n", ModuleName);
@@ -309,9 +310,11 @@ FuseCheckForWork (
                 memcpy(FuseNtReq->iostack, UserspaceIrp + 1, StackLength);
 
                 FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
+                FileName = UserspaceIrpSp->FileObject->FileName.Buffer;
+                FileNameLength = (wcslen(FileName) + 1) * sizeof(WCHAR);
                 *FileNameLengthField = FileNameLength;
 
-                memcpy(FileNameLengthField + 1, ModuleName, FileNameLength);
+                memcpy(FileNameLengthField + 1, FileName, FileNameLength);
                 ModuleIrp->IoStatus.Information = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
 
                 //
