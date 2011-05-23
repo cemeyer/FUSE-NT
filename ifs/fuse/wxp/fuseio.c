@@ -311,6 +311,15 @@ FuseCheckForWork (
 
                 FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
                 FileName = UserspaceIrpSp->FileObject->FileName.Buffer;
+                
+                //
+                //  Strip out the module name from the file name
+                //
+                FileName ++;
+                while(FileName[0] != L'\\' && FileName[0] != L'\0') {
+                    FileName ++;
+                }
+
                 FileNameLength = (wcslen(FileName) + 1) * sizeof(WCHAR);
                 *FileNameLengthField = FileNameLength;
 
