@@ -1667,16 +1667,17 @@ static inline NTSTATUS fusent_translate_errno(int err)
 {
 	if (err >= 0) return STATUS_SUCCESS;
 
-        switch (err) {
-          case EACCES: return STATUS_ACCESS_DENIED;
-          case EBADF: return STATUS_INVALID_HANDLE;
-          case ENOENT: return STATUS_NO_SUCH_FILE;
-          case EEXIST: return STATUS_CANNOT_MAKE;
-          case ENOSPC: break;
+	switch (err) {
+		case EACCES: return STATUS_ACCESS_DENIED;
+		case EBADF: return STATUS_INVALID_HANDLE;
+		case ENOENT: return STATUS_NO_SUCH_FILE;
+		case EEXIST: return STATUS_CANNOT_MAKE;
+		case ENOSPC: break;
+		case ENOSYS: return STATUS_NOT_IMPLEMENTED;
 
-          case EAGAIN:
-          case EWOULDBLOCK: return STATUS_RETRY;
-        }
+		case EAGAIN:
+		case EWOULDBLOCK: return STATUS_RETRY;
+	}
 
 	return STATUS_UNSUCCESSFUL;
 }
@@ -2028,16 +2029,8 @@ reply_err_nt:
 // Handle an IRP_MJ_CLEANUP request
 static void fusent_do_cleanup(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
+	// TODO flush
+	fusent_reply_error(req, ntreq->pirp, ntreq->fop, 0);
 }
 
 // Handle an IRP_MJ_CLOSE request
@@ -2046,7 +2039,7 @@ static void fusent_do_close(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 	UCHAR flags = iosp->Flags;
 	int err;
 
-	// TODO: fill in this function stub
+	// TODO: flush, release
 
 	err = ENOSYS;
 	goto reply_err_nt;
