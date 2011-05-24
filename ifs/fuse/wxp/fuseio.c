@@ -50,6 +50,60 @@ FuseCheckUnmountModule (
     IN PIO_STACK_LOCATION IrpSp
     );
 
+NTSTATUS
+FuseQueryBasicInfo (
+    IN OUT PFILE_BASIC_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryStandardInfo (
+    IN OUT PFILE_STANDARD_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryNameInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_NAME_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsVolumeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_VOLUME_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsSizeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_SIZE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsDeviceInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_DEVICE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsAttributeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_ATTRIBUTE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsFullSizeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_FULL_SIZE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
 //
 //  This hash map implementation uses linear probing, which
 //  is not very fast for densely populated maps, but we set
@@ -65,9 +119,9 @@ FuseAddUserspaceIrp (
     )
 
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     WCHAR* FileName = IrpSp->FileObject->FileName.Buffer + 1;
-	PUNICODE_STRING FileNameString = &IrpSp->FileObject->FileName;
+    PUNICODE_STRING FileNameString = &IrpSp->FileObject->FileName;
     WCHAR* ModuleName;
     WCHAR* BackslashPosition = NULL;
     PMODULE_STRUCT ModuleStruct;
@@ -86,16 +140,16 @@ FuseAddUserspaceIrp (
         //  Shift FileName by one WCHAR so that we don't read the initial \
         //
 
-	    BackslashPosition = wcsstr(FileName, L"\\");
-		
-		if(!BackslashPosition) {
-			ModuleName = FileName;
-		} else {
-			ULONG ModuleNameLength = (ULONG)(BackslashPosition - FileName);
-			ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
-			memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
-			ModuleName[ModuleNameLength] = '\0';
-		}
+        BackslashPosition = wcsstr(FileName, L"\\");
+        
+        if(!BackslashPosition) {
+            ModuleName = FileName;
+        } else {
+            ULONG ModuleNameLength = (ULONG)(BackslashPosition - FileName);
+            ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
+            memcpy(ModuleName, FileName, sizeof(WCHAR) * (ModuleNameLength));
+            ModuleName[ModuleNameLength] = '\0';
+        }
 
         DbgPrint("Parsed module name for userspace request is %S\n", ModuleName);
 
@@ -128,8 +182,8 @@ FuseAddUserspaceIrp (
         if(ModuleName != FileName) {
             ExFreePool(ModuleName);
         }
-	} else {
-		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    } else {
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
         Status = STATUS_SUCCESS;
     }
 
@@ -371,7 +425,7 @@ FuseCopyResponse (
 //  response with the userspace IRP and complete both IRPs
 //
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     //
     //  First validate the user buffer
@@ -415,13 +469,20 @@ FuseCopyResponse (
 
                 if(MatchFound) {
 
-                    DbgPrint("Match found for response from module %S. Completing userspace request\n", ModuleStruct->ModuleName);
+                    PIO_STACK_LOCATION UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
+
+                    DbgPrint("Match found for response from module %S. Completing userspace request. Status is %d for major code %x on file %S\n",
+                        ModuleStruct->ModuleName, FuseNtResp->status, UserspaceIrp->Flags, UserspaceIrpSp->FileObject->FileName.Buffer);
 
                     //
                     //  We've found a match. Complete the userspace request
                     //
                     //  TODO: copy buffers for reads and writes
-                    UserspaceIrp->IoStatus.Status = -FuseNtResp->status;
+                    if(FuseNtResp->error != 0) {
+                        UserspaceIrp->IoStatus.Status = -FuseNtResp->error;
+                    } else {
+                        UserspaceIrp->IoStatus.Status = FuseNtResp->status;
+                    }
                     IoCompleteRequest(UserspaceIrp, IO_NO_INCREMENT);
 
                     //
@@ -517,14 +578,14 @@ FuseFsdFileSystemControl (
     IN PIRP Irp
     )
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdFileSystemControl\n");
 
     //
     //  When a module requests a mount, its unique name of the form
-    //  [module-name][process ID] is added to the module map and space is
+    //  [module-name]-[process ID] is added to the module map and space is
     //  allocated for the module's storage structure
     //
     //  Modules will call NtFsControlFile with IRP_FUSE_MODULE_REQUEST
@@ -540,7 +601,15 @@ FuseFsdFileSystemControl (
     //  response from the module and then completed
     //
 
-    if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MOUNT) {
+    if(IrpSp->FileObject->FileName.Length <= 1) {
+
+        //
+        //  File names pointing to valid modules should be of the form "\[name]-[pid]"
+        //
+
+        return STATUS_INVALID_PARAMETER;
+
+    } else if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MOUNT) {
         WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
         PMODULE_STRUCT ModuleStruct;
 
@@ -563,24 +632,28 @@ FuseFsdFileSystemControl (
 
         ModuleStruct->ModuleFileObject = IrpSp->FileObject;
         ModuleStruct->ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (wcslen(ModuleName) + 1));
-        RtlStringCchCopyW(ModuleStruct->ModuleName, sizeof(WCHAR) * (wcslen(ModuleName) + 1), ModuleName);
+        RtlStringCchCopyW(ModuleStruct->ModuleName, wcslen(ModuleName) + 1, ModuleName);
         hmap_add(&ModuleMap, ModuleStruct->ModuleName, ModuleStruct);
 
         Status = STATUS_SUCCESS;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
     } else if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MODULE_REQUEST ||
         IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MODULE_RESPONSE) {
 
         WCHAR* ModuleName = IrpSp->FileObject->FileName.Buffer + 1;
         PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) hmap_get(&ModuleMap, ModuleName);
 
-
         //
         //  Verify that whoever is making the request is using the same file handle that
         //  the module initially used to set up communication
         //
 
-        if(ModuleStruct->ModuleFileObject == IrpSp->FileObject) {
+        if(!ModuleStruct) {
+            DbgPrint("NtFsControlFile called on unmounted module %S with code %x\n", ModuleName, IrpSp->Parameters.FileSystemControl.FsControlCode);
+
+            Status = STATUS_INVALID_PARAMETER;
+        } else if(ModuleStruct->ModuleFileObject == IrpSp->FileObject) {
 
             if(IrpSp->Parameters.FileSystemControl.FsControlCode == IRP_FUSE_MODULE_REQUEST) {
 
@@ -733,16 +806,6 @@ FuseFsdDirectoryControl (
 }
 
 NTSTATUS
-FuseFsdQueryEa (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseFsdQueryEa\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
 FuseFsdSetEa (
     IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
@@ -758,8 +821,190 @@ FuseFsdQueryInformation (
     IN PIRP Irp
     )
 {
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG Length;
+    FILE_INFORMATION_CLASS FileInformationClass;
+    PFILE_ALL_INFORMATION AllInfo;
+    LARGE_INTEGER Time;
+    LARGE_INTEGER FileSize;
+    
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
     DbgPrint("FuseFsdQueryInformation\n");
-    return STATUS_SUCCESS;
+
+    Length = (LONG) IrpSp->Parameters.QueryFile.Length;
+    FileInformationClass = IrpSp->Parameters.QueryFile.FileInformationClass;
+    AllInfo = (PFILE_ALL_INFORMATION) Irp->AssociatedIrp.SystemBuffer;
+
+    switch (FileInformationClass) {
+
+    case FileAllInformation:
+
+        //
+        //  For the all information class we'll typecast a local
+        //  pointer to the output buffer and then call the
+        //  individual routines to fill in the buffer.
+        //
+
+        FuseQueryBasicInfo(&AllInfo->BasicInformation, &Length);
+        FuseQueryStandardInfo(&AllInfo->StandardInformation, &Length);
+        FuseQueryNameInfo(IrpSp, &AllInfo->NameInformation, &Length);
+
+        break;
+
+    case FileBasicInformation:
+
+        FuseQueryBasicInfo(&AllInfo->BasicInformation, &Length);
+        break;
+
+    case FileStandardInformation:
+
+        FuseQueryStandardInfo(&AllInfo->StandardInformation, &Length);
+        break;
+
+    case FileNameInformation:
+
+        FuseQueryNameInfo(IrpSp, &AllInfo->NameInformation, &Length);
+        break;
+
+    default:
+
+        Status = STATUS_INVALID_PARAMETER;
+    }
+
+    //
+    //  If we overflowed the buffer, set the length to 0 and change the
+    //  status to STATUS_BUFFER_OVERFLOW.
+    //
+
+    if ( Length < 0 ) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+
+        Length = 0;
+    }
+
+    //
+    //  Set the information field to the number of bytes actually filled in
+    //  and then complete the request
+    //
+
+    Irp->IoStatus.Information = IrpSp->Parameters.QueryFile.Length - Length;
+
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    
+    return Status;
+}
+
+NTSTATUS
+FuseQueryBasicInfo (
+    IN OUT PFILE_BASIC_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_BASIC_INFORMATION);
+    LARGE_INTEGER Time;
+
+    DbgPrint("FuseQueryBasicInfo\n");
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        KeQuerySystemTime(&Time);
+
+        Buffer->FileAttributes = FILE_ATTRIBUTE_NORMAL;
+        Buffer->ChangeTime = Time;
+        Buffer->CreationTime = Time;
+        Buffer->LastAccessTime = Time;
+        Buffer->LastWriteTime = Time;
+
+        *Length -= InformationLength;
+    }
+
+    return Status;
+}
+
+NTSTATUS
+FuseQueryStandardInfo (
+    IN OUT PFILE_STANDARD_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_STANDARD_INFORMATION);
+    LARGE_INTEGER FileSize;
+
+    DbgPrint("FuseQueryStandardInfo\n");
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        FileSize.QuadPart = 0;
+
+        // the size of the file as allocated on disk--for us this will just be the file size
+        Buffer->AllocationSize = FileSize;
+
+        // the position of the byte following the last byte in this file
+        Buffer->EndOfFile = FileSize;
+
+        Buffer->DeletePending = FALSE;
+        Buffer->Directory = FALSE;
+
+        // number of hard links to the file...I'm not sure that we have a way to determine
+        // this. Let's set it to 1 for now
+        Buffer->NumberOfLinks = 1;
+    }
+
+    return Status;
+}
+
+NTSTATUS
+FuseQueryNameInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_NAME_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    WCHAR* FileName = IrpSp->FileObject->FileName.Buffer;
+    ULONG FileNameLength = IrpSp->FileObject->FileName.Length;
+    LONG InformationLength = sizeof(WCHAR) * (FileNameLength + 1) + sizeof(ULONG);
+
+    DbgPrint("FuseQueryNameInfo\n");
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        RtlStringCchCopyW(Buffer->FileName, sizeof(WCHAR) * (FileNameLength + 1), FileName);
+        Buffer->FileNameLength = sizeof(WCHAR) * (FileNameLength + 1);
+    }
+
+    return Status;
 }
 
 NTSTATUS
@@ -818,8 +1063,232 @@ FuseFsdQueryVolumeInformation (
     IN PIRP Irp
     )
 {
+    NTSTATUS Status = STATUS_SUCCESS;
+    PIO_STACK_LOCATION IrpSp;
+
+    LONG Length;
+    FS_INFORMATION_CLASS FsInformationClass;
+    PVOID Buffer;
+    ULONG VolumeLabelLength;
+    LARGE_INTEGER Time;
+
     DbgPrint("FuseFsdQueryVolumeInformation\n");
-    return FuseCommonQueryVolumeInfo(Irp);
+
+    //
+    //  Get the current stack location
+    //
+
+    IrpSp = IoGetCurrentIrpStackLocation( Irp );
+    
+    //
+    //  Reference our input parameters to make things easier
+    //
+
+    Length = IrpSp->Parameters.QueryVolume.Length;
+    FsInformationClass = IrpSp->Parameters.QueryVolume.FsInformationClass;
+    Buffer = Irp->AssociatedIrp.SystemBuffer;
+
+    switch (FsInformationClass) {
+
+    case FileFsVolumeInformation:
+
+        Status = FuseQueryFsVolumeInfo( IrpSp, (PFILE_FS_VOLUME_INFORMATION) Buffer, &Length );
+        break;
+        /*
+    case FileFsSizeInformation:
+
+        Status = FuseQueryFsSizeInfo( IrpSp, (PFILE_FS_SIZE_INFORMATION) Buffer, &Length );
+        break;
+
+    case FileFsDeviceInformation:
+
+        Status = FuseQueryFsDeviceInfo( IrpSp, (PFILE_FS_DEVICE_INFORMATION) Buffer, &Length );
+        break;
+
+    case FileFsAttributeInformation:
+
+        Status = FuseQueryFsAttributeInfo( IrpSp, (PFILE_FS_ATTRIBUTE_INFORMATION) Buffer, &Length );
+        break;
+
+    case FileFsFullSizeInformation:
+
+        Status = FuseQueryFsFullSizeInfo( IrpSp, (PFILE_FS_FULL_SIZE_INFORMATION) Buffer, &Length );
+        break;
+        */
+    default:
+
+        Status = STATUS_INVALID_PARAMETER;
+        break;
+    }
+
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    
+    return Status;
+}
+
+NTSTATUS
+FuseQueryFsVolumeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_VOLUME_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_FS_VOLUME_INFORMATION);
+    LARGE_INTEGER Time;
+    WCHAR* FileName = IrpSp->FileObject->FileName.Buffer;
+    ULONG FileNameLength = IrpSp->FileObject->FileName.Length;
+    WCHAR* VolumeLabel = FileName;
+    ULONG VolumeLabelLength = FileNameLength;
+
+    DbgPrint("FuseQueryFsVolumeInfo\n");
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        //
+        //  Copy the name of the module as the volume label, stripping out the initial backslash
+        //
+    
+        if(FileNameLength >= 1) {
+            ULONG ModuleNameLength = 0;
+            WCHAR* BackslashPosition;
+
+            VolumeLabel ++;
+            VolumeLabelLength --;
+            BackslashPosition = wcsstr(VolumeLabel, L"\\");
+
+            if(BackslashPosition) {
+                VolumeLabelLength = BackslashPosition - VolumeLabel;
+            }
+        }
+
+        Buffer->VolumeLabelLength = sizeof(WCHAR) * (VolumeLabelLength + 1);
+        RtlStringCchCopyW(Buffer->VolumeLabel, VolumeLabelLength, VolumeLabel);
+        Buffer->VolumeSerialNumber = 0x1337;
+
+        KeQuerySystemTime(&Time);
+        Buffer->VolumeCreationTime = Time;
+        Buffer->SupportsObjects = FALSE;
+    }
+
+    return Status;
+}
+
+NTSTATUS
+FuseQueryFsSizeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_SIZE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_FS_SIZE_INFORMATION);
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        
+    }
+
+    return Status;
+}
+
+NTSTATUS
+FuseQueryFsDeviceInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_DEVICE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_FS_DEVICE_INFORMATION);
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        
+    }
+
+    return Status;
+}
+
+NTSTATUS
+FuseQueryFsAttributeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_ATTRIBUTE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_FS_ATTRIBUTE_INFORMATION);
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        
+    }
+
+    return Status;
+}
+
+NTSTATUS
+FuseQueryFsFullSizeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_FULL_SIZE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    )
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    LONG InformationLength = sizeof(FILE_FS_FULL_SIZE_INFORMATION);
+
+    //
+    //  First check if there is enough space to write the information to the buffer
+    //
+
+    if(*Length < InformationLength) {
+
+        Status = STATUS_BUFFER_OVERFLOW;
+    } else {
+
+        RtlZeroMemory(Buffer, InformationLength);
+
+        
+    }
+
+    return Status;
 }
 
 NTSTATUS
@@ -829,447 +1298,6 @@ FuseFsdSetVolumeInformation (
     )
 {
     DbgPrint("FuseFsdSetVolumeInformation\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonCleanup (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonCleanup\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonClose (
-    IN PVCB Vcb,
-    IN PFCB Fcb,
-    IN TYPE_OF_OPEN TypeOfOpen,
-    IN BOOLEAN Wait,
-    OUT PBOOLEAN VcbDeleted OPTIONAL
-    )
-{
-    DbgPrint("FuseCommonClose\n");
-    return STATUS_SUCCESS;
-}
-
-VOID
-FuseFspClose (   
-    IN PVCB Vcb OPTIONAL
-    )
-{
-    DbgPrint("FuseFspClose\n");
-}
-
-NTSTATUS
-FuseCommonCreate (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonCreate\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonDirectoryControl (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonDirectoryControl\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonDeviceControl (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonDeviceControl\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonQueryEa (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonQueryEa\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonSetEa (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonSetEa\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonQueryInformation (
-    /* IN PIRP_CONTEXT IrpContext, */
-    IN PIRP Irp
-    )
-{
-    NTSTATUS Status;
-
-    PIO_STACK_LOCATION IrpSp;
-
-    PFILE_OBJECT FileObject;
-
-    LONG Length;
-    FILE_INFORMATION_CLASS FileInformationClass;
-    PVOID Buffer;
-
-    TYPE_OF_OPEN TypeOfOpen;
-    PVCB Vcb;
-    PFCB Fcb;
-    PCCB Ccb;
-
-    BOOLEAN FcbAcquired;
-
-    PFILE_ALL_INFORMATION AllInfo;
-
-    //
-    //  Get the current stack location
-    //
-
-    IrpSp = IoGetCurrentIrpStackLocation( Irp );
-
-    FileObject = IrpSp->FileObject;
-
-    //
-    //  Reference our input parameters to make things easier
-    //
-
-    Length = (LONG)IrpSp->Parameters.QueryFile.Length;
-    FileInformationClass = IrpSp->Parameters.QueryFile.FileInformationClass;
-    Buffer = Irp->AssociatedIrp.SystemBuffer;
-
-    //
-    //  Decode the file object
-    //
-
-    TypeOfOpen = FuseDecodeFileObject( FileObject, &Vcb, &Fcb, &Ccb );
-    Status = STATUS_SUCCESS;
-
-        //
-        //  Case on the type of open we're dealing with
-        //
-
-        switch (TypeOfOpen) {
-
-        case UserVolumeOpen:
-
-            //
-            //  We cannot query the user volume open.
-            //
-
-            Status = STATUS_INVALID_PARAMETER;
-            break;
-
-        case UserFileOpen:
-
-        case UserDirectoryOpen:
-
-        case DirectoryFile:
-
-            switch (FileInformationClass) {
-
-            case FileAllInformation:
-
-            case FileBasicInformation:
-
-            case FileStandardInformation:
-
-            case FileInternalInformation:
-
-            case FileEaInformation:
-
-            case FilePositionInformation:
-
-            case FileNameInformation:
-
-            case FileAlternateNameInformation:
-
-            case FileNetworkOpenInformation:
-
-                FuseFsdQueryInformation(Buffer, Irp);
-                break;
-
-            default:
-
-                Status = STATUS_INVALID_PARAMETER;
-                break;
-            }
-
-            break;
- 
-        default:
-
-            Status = STATUS_INVALID_PARAMETER;
-            break;
-        }
-
-        //
-        //  If we overflowed the buffer, set the length to 0 and change the
-        //  status to STATUS_BUFFER_OVERFLOW.
-        //
-
-        if ( Length < 0 ) {
-
-            Status = STATUS_BUFFER_OVERFLOW;
-
-            Length = 0;
-        }
-
-        //
-        //  Set the information field to the number of bytes actually filled in
-        //  and then complete the request
-        //
-
-        Irp->IoStatus.Information = IrpSp->Parameters.QueryFile.Length - Length;
-
-    return Status;
-}
-
-NTSTATUS
-FuseCommonSetInformation (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonSetInformation\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonFlushBuffers (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonFlushBuffers\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonFileSystemControl (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonFileSystemControl\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonLockControl (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonLockControl\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonPnp (  
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonPnp\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonRead ( 
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonRead\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonShutdown (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonShutdown\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonQueryVolumeInfo (
-    // IN PIRP_CONTEXT IrpContext, -- Not sure where IRP_CONTEXTs come from yet. Not needed for current implementation anyways. Remove note in header file.
-    IN PIRP Irp
-    )
-{
-    NTSTATUS Status;
-    PIO_STACK_LOCATION IrpSp;
-
-    ULONG Length;
-    FS_INFORMATION_CLASS FsInformationClass;
-    PVOID Buffer;
-
-    //
-    //  Get the current stack location
-    //
-
-    IrpSp = IoGetCurrentIrpStackLocation( Irp );
-	
-    //
-    //  Reference our input parameters to make things easier
-    //
-
-    Length = IrpSp->Parameters.QueryVolume.Length;
-    FsInformationClass = IrpSp->Parameters.QueryVolume.FsInformationClass;
-    Buffer = Irp->AssociatedIrp.SystemBuffer;
-	
-	switch (FsInformationClass) {
-
-        case FileFsVolumeInformation:
-		
-            Status = FuseQueryFsVolumeInfo(Buffer, &Length);
-            break;
-
-        case FileFsSizeInformation:
-
-            Status = STATUS_SUCCESS;
-            break;
-
-        case FileFsDeviceInformation:
-
-            Status = STATUS_SUCCESS;
-            break;
-
-        case FileFsAttributeInformation:
-
-            Status = STATUS_SUCCESS;
-            break;
-
-        case FileFsFullSizeInformation:
-
-            Status = STATUS_SUCCESS;
-            break;
-
-        default:
-
-            Status = STATUS_SUCCESS;
-            break;
-	}
-	
-    return Status;
-}
-
-NTSTATUS
-FuseQueryFsVolumeInfo (
-    IN PFILE_FS_VOLUME_INFORMATION Buffer,
-    IN OUT PULONG Length
-    )
-
-/*++
-
-Routine Description:
-
-    This routine implements the query volume info call
-
-Arguments:
-
-    Vcb - Supplies the Vcb being queried
-
-    Buffer - Supplies a pointer to the output buffer where the information
-        is to be returned
-
-    Length - Supplies the length of the buffer in byte.  This variable
-        upon return recieves the remaining bytes free in the buffer
-
-Return Value:
-
-    NTSTATUS - Returns the status for the query
-
---*/
-
-{
-    ULONG BytesToCopy;
-
-    NTSTATUS Status;
-
-	PWCHAR HelloWorldLabel = L"HELLO_WORLD";
-	
-    //
-    //  Zero out the buffer, then extract and fill up the non zero fields.
-    //
-
-    RtlZeroMemory( Buffer, sizeof(FILE_FS_VOLUME_INFORMATION) );
-
-    Buffer->VolumeSerialNumber = 1337; // chosen at random
-
-    Buffer->SupportsObjects = FALSE;
-
-    *Length -= FIELD_OFFSET(FILE_FS_VOLUME_INFORMATION, VolumeLabel[0]);
-
-    //
-    //  Check if the buffer we're given is long enough
-    //
-
-    if ( *Length >= (ULONG)sizeof(HelloWorldLabel) ) {
-
-        BytesToCopy = sizeof(HelloWorldLabel);
-
-        Status = STATUS_SUCCESS;
-
-    } else {
-
-        BytesToCopy = *Length;
-
-        Status = STATUS_BUFFER_OVERFLOW;
-    }
-
-    //
-    //  Copy over what we can of the volume label, and adjust *Length
-    //
-
-    Buffer->VolumeLabelLength = sizeof(HelloWorldLabel);
-
-    RtlCopyMemory( &Buffer->VolumeLabel[0],
-                   HelloWorldLabel,
-                   BytesToCopy );
-
-    *Length -= BytesToCopy;
-	
-    return Status;
-}
-
-NTSTATUS
-FuseCommonSetVolumeInfo (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonSetVolumeInfo\n");
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-FuseCommonWrite (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp
-    )
-{
-    DbgPrint("FuseCommonWrite\n");
     return STATUS_SUCCESS;
 }
 
@@ -1298,8 +1326,11 @@ FuseFastQueryBasicInfo (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
+    LONG Length = sizeof(FILE_BASIC_INFORMATION);
+
     DbgPrint("FuseFastQueryBasicInfo\n");
-    return FALSE;
+
+    return FuseQueryBasicInfo(Buffer, &Length) == STATUS_SUCCESS;
 }
 
 BOOLEAN
