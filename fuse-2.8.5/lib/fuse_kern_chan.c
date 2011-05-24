@@ -39,7 +39,13 @@ static int fuse_kern_chan_receive(struct fuse_chan **chp, char *buf,
 		CloseHandle(ioevent);
 	}
 	else {
-		DWORD waitres = WaitForSingleObject(ioevent, INFINITE);
+		DWORD waitres;
+		do {
+			// Wait for a second:
+			waitres = WaitForSingleObject(ioevent, 1000);
+			if (fuse_session_exited(se))
+				return 0;
+		} while (waitres == WAIT_TIMEOUT);
 		CloseHandle(ioevent);
 
 		if (waitres != WAIT_OBJECT_0) {
