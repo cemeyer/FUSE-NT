@@ -145,7 +145,7 @@ static void convert_attr(const struct fuse_setattr_in *attr, struct stat *stbuf)
 	ST_MTIM_NSEC_SET(stbuf, attr->mtimensec);
 }
 
-static	size_t iov_length(const struct iovec *iov, size_t count)
+static inline size_t iov_length(const struct iovec *iov, size_t count)
 {
 	size_t seg;
 	size_t ret = 0;
@@ -1666,6 +1666,18 @@ static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in)
 static inline NTSTATUS fusent_translate_errno(int err)
 {
 	if (err >= 0) return STATUS_SUCCESS;
+
+        switch (err) {
+          case EACCES: return STATUS_ACCESS_DENIED;
+          case EBADF: return STATUS_INVALID_HANDLE;
+          case ENOENT: return STATUS_NO_SUCH_FILE;
+          case EEXIST: return STATUS_CANNOT_MAKE;
+          case ENOSPC: break;
+
+          case EAGAIN:
+          case EWOULDBLOCK: return STATUS_RETRY;
+        }
+
 	return STATUS_UNSUCCESSFUL;
 }
 
