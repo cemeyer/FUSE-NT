@@ -280,6 +280,7 @@ static int receive_fd(int fd)
 void fuse_kern_unmount(const char *mountpoint, HANDLE fd)
 {
 	// TODO(cemeyer)
+	fprintf(stderr, "fuse_kern_unmount() got called.\n");
 }
 #else
 void fuse_kern_unmount(const char *mountpoint, int fd)
