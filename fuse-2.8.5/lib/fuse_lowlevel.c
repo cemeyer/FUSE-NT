@@ -1675,7 +1675,7 @@ static inline NTSTATUS fusent_translate_errno(int err)
 		case ENOSPC: break;
 		case ENOSYS: return STATUS_NOT_IMPLEMENTED;
 
-		case EAGAIN:
+		//case EAGAIN: EAGAIN and EWOULDBLOCK turn out to be the same code, so this case would duplicate the subsequent case statement.
 		case EWOULDBLOCK: return STATUS_RETRY;
 	}
 
