@@ -137,7 +137,7 @@ typedef struct _FUSENT_RESP {
 			LARGE_INTEGER AllocationSize;
 			LARGE_INTEGER EndOfFile;
 			ULONG NumberOfLinks;
-			BOOLEAN DeletePending
+			BOOLEAN DeletePending;
 			BOOLEAN Directory;
 			ULONG FileNameLength;
 				// WCHAR *FileName will follow the FUSENT_RESP header
@@ -145,7 +145,7 @@ typedef struct _FUSENT_RESP {
 		struct {
 			uint32_t buflen;
 			//FUSENT_DIR_INFORMATION dirinfo[0]; defined as following the FUSENT_RESP header.
-		} read;
+		} dirctrl;
 		// potentially other kinds of responses here...
 	} params;
 } FUSENT_RESP;
