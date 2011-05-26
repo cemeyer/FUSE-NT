@@ -94,6 +94,22 @@ typedef struct _FUSENT_MOUNT { // weird special-case "response"
 	// mtopts aligned)
 } FUSENT_MOUNT;
 
+typedef struct _FUSENT_DIR_INFORMATION {
+  ULONG         NextEntryOffset;
+  ULONG         FileIndex;
+  LARGE_INTEGER CreationTime;
+  LARGE_INTEGER LastAccessTime;
+  LARGE_INTEGER LastWriteTime;
+  LARGE_INTEGER ChangeTime;
+  LARGE_INTEGER EndOfFile;
+  LARGE_INTEGER AllocationSize;
+  ULONG         FileAttributes;
+  ULONG         FileNameLength;
+  WCHAR         FileName; // the rest of the filename shall follow. 
+						  // Use FileNameLength or NextEntryOffset 
+						  // to find the start of the next entry.
+} FUSENT_DIR_INFORMATION, *PFUSENT_DIR_INFORMATION;
+
 typedef struct _FUSENT_RESP {
 	PIRP pirp; PFILE_OBJECT fop;
 	int error; // all high-level fuse operations return int
@@ -107,20 +123,24 @@ typedef struct _FUSENT_RESP {
 		struct {
 			uint32_t written;
 		} write;
-    struct {
-      LARGE_INTEGER CreationTime = 1;
-      LARGE_INTEGER LastAccessTime;
-      LARGE_INTEGER LastWriteTime;
-      LARGE_INTEGER ChangeTime;
-      ULONG FileAttributes;
-      LARGE_INTEGER AllocationSize;
-      LARGE_INTEGER EndOfFile;
-      ULONG NumberOfLinks;
-      BOOLEAN DeletePending = FALSE;
-      BOOLEAN Directory;
-      ULONG FileNameLength;
+		struct {
+			LARGE_INTEGER CreationTime = 1;
+			LARGE_INTEGER LastAccessTime;
+			LARGE_INTEGER LastWriteTime;
+			LARGE_INTEGER ChangeTime;
+			ULONG FileAttributes;
+			LARGE_INTEGER AllocationSize;
+			LARGE_INTEGER EndOfFile;
+			ULONG NumberOfLinks;
+			BOOLEAN DeletePending = FALSE;
+			BOOLEAN Directory;
+			ULONG FileNameLength;
 			// WCHAR *FileName will follow the FUSENT_RESP header
-    } query;
+		} query;
+		struct {
+			uint32_t buflen;
+			//FUSENT_DIR_INFORMATION dirinfo[0]; Directory Info structs follow the FUSENT_RESP header.
+		} dirctrl;
 		// potentially other kinds of responses here...
 	} params;
 } FUSENT_RESP;
