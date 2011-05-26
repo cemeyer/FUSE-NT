@@ -126,7 +126,7 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
     fprintf(stderr, "fusent_remove_fop_mapping: There should be a fop->basename mapping");
   }
 
-  st_delete(fusent_fop_basename_map, &irfop, NULL), 
+  st_delete(fusent_fop_basename_map, &irfop, NULL);
 }
 #endif /* __CYGWIN__ */
 
