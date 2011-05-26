@@ -95,8 +95,7 @@ typedef struct _FUSENT_MOUNT { // weird special-case "response"
 } FUSENT_MOUNT;
 
 typedef struct _FUSENT_RESP {
-	PIRP pirp;
-	PFILE_OBJECT fop;
+	PIRP pirp; PFILE_OBJECT fop;
 	int error; // all high-level fuse operations return int
 		   // negative is error (-errno); zero is OK
 	NTSTATUS status;
@@ -108,6 +107,20 @@ typedef struct _FUSENT_RESP {
 		struct {
 			uint32_t written;
 		} write;
+    struct {
+      LARGE_INTEGER CreationTime = 1;
+      LARGE_INTEGER LastAccessTime;
+      LARGE_INTEGER LastWriteTime;
+      LARGE_INTEGER ChangeTime;
+      ULONG FileAttributes;
+      LARGE_INTEGER AllocationSize;
+      LARGE_INTEGER EndOfFile;
+      ULONG NumberOfLinks;
+      BOOLEAN DeletePending = FALSE;
+      BOOLEAN Directory;
+      ULONG FileNameLength;
+			// WCHAR *FileName will follow the FUSENT_RESP header
+    } query;
 		// potentially other kinds of responses here...
 	} params;
 } FUSENT_RESP;

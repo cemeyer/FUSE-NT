@@ -52,6 +52,7 @@ static iconv_t cd_utf16le_to_utf8;
 // Maps between open FileObject pointers (fops) and fuse_file_info pointers / inode numbers:
 static st_table *fusent_fop_fi_map;
 static st_table *fusent_fop_ino_map;
+static st_table *fusent_fop_basename_map;
 
 void fusent_translate_setup()
 {
@@ -69,10 +70,18 @@ void fusent_translate_teardown()
 }
 
 // Add the fh <-> fop mapping to our maps:
-static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino)
+static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino, char *basename)
 {
+  size_t len;
+  char * val;
+
 	st_insert(fusent_fop_fi_map, (st_data_t)fop, (st_data_t)fi);
 	st_insert(fusent_fop_ino_map, (st_data_t)fop, (st_data_t)ino);
+
+  len = strlen(basename);
+  val = malloc(sizeof(char) * len);
+  fusent_transcode(basename, len, val, len, "UTF-8", "UTF-16LE");
+	st_insert(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)val);
 }
 
 // Lookup the corresponding file_info pointer for an open file handle (fh).
@@ -96,6 +105,8 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 {
 	struct fuse_file_info *rfi;
 	fuse_ino_t ino;
+  char *basename;
+  int res;
 	if (fusent_fi_inode_from_fop(fop, &rfi, &ino) < 0) return;
 
 	free(rfi);
@@ -105,6 +116,17 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 
 	irfop = (st_data_t)fop;
 	st_delete(fusent_fop_ino_map, &irfop, NULL);
+
+	irfop = (st_data_t)fop;
+	res = st_lookup(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)basename);
+
+  if (!res) {
+    free(basename);
+  } else {
+    fprintf(stderr, "fusent_remove_fop_mapping: There should be a fop->basename mapping");
+  }
+
+  st_delete(fusent_fop_basename_map, &irfop, NULL), 
 }
 #endif /* __CYGWIN__ */
 
@@ -1736,6 +1758,40 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 	fusent_sendmsg(req, resp, buflen);
 }
 
+static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, stat *st)
+{
+  char *buf;
+  char *basename;
+  int res;
+	FUSENT_RESP *resp;
+  int buflen;
+
+	res = st_lookup(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)basename);
+
+  if (res) {
+    fprintf(stderr, "fusent_remove_fop_mapping: There should be a fop->basename mapping");
+  } 
+
+  buflen = sizeof(FUSENT_RESP) + sizeof(basename);
+  buf = malloc(buflen);
+  memcpy(buf + sizeof(FUSENT_RESP), basename, sizeof(basename));
+	resp = (FUSENT_RESP *)buf;
+	fusent_fill_resp(resp, pirp, fop, 0);
+
+  resp->params.query.LastAccessTime.u.LowPart = st->st_atime;
+  resp->params.query.LastWriteTime.u.LowPart = st->st_mtime;
+  resp->params.query.ChangeTime.u.LowPart = st->st_ctime;
+  resp->params.query.FileAttributes = fusent_translate_attributes(st->st_mode);
+  resp->params.query.AllocationSize.u.Lowpart = st->st_blocks * 512;
+  resp->params.query.EndOfFile.u.Lowpart = st->st_size;
+  resp->params.query.NumberOfLinks = st->st_nlink
+  resp->params.query.Directory = S_ISDIR(st->st_mode);
+  resp->params.query.FileNameLength = sizeof(basename);
+
+	fusent_sendmsg(req, resp, buflen);
+  free(buf);
+}
+
 // Handle an IRP_MJ_CREATE call
 static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
@@ -1877,7 +1933,7 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	fi->flags = openresp->open_flags;
 	free(giantbuf);
 
-	fusent_add_fop_mapping(ntreq->fop, fi, fino);
+	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename);
 	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 	return;
 
@@ -2139,19 +2195,70 @@ reply_err_nt:
 }
 
 // Handle an IRP_MJ_QUERY_INFORMATION request
-static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
+static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp,
+  fuse_req_t req)
 {
-	UCHAR flags = iosp->Flags;
+	PFILE_OBJECT fop = ntreq->fop;
+  struct stat *st;
 	int err;
 
-	// TODO: fill in this function stub
+	// Likewise, fi and inode get initialized by fusent_fi_inode_from_fop().
+	// Bogus compiler warning. --cemeyer
+	struct fuse_file_info *fi;
+	fuse_ino_t inode;
+	if (fusent_fi_inode_from_fop(fop, &fi, &inode) < 0) {
+		err = EBADF;
+		goto reply_err_nt;
+	}
 
-	err = ENOSYS;
-	goto reply_err_nt;
+	struct fuse_out_header outh;
+  // hijack returns the stat struct? i can allocate the resp and
+  // filename later, i want to do it in fusent_reply_query_information
+	req->response_hijack = &outh;
+	req->response_hijack_buf = st;
+	req->response_hijack_buflen = sizeof(stat);
+
+	fuse_ll_ops[FUSE_GETATTR].func(req, inode, fi);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		free(giantbuf);
+		err = -outh.error;
+		goto reply_err_nt;
+	}
+  
+  fusent_reply_query_information(req, ntreq->pirp, ntreq->fop, st);
+
+	return;
 
 reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
+
+static ULONG fusent_translate_attributes(mode_t m)
+{
+  ULONG val = 0;
+  if (S_ISBLK(m) && S_ISCHR(m)) {
+    val &= FILE_ATTRIBUTE_DEVICE;
+  }
+  if (!(m && S_IWUSR || m && S_IXUSR || m && S_IWGRP || m && S_IXGRP ||
+      m && S_IWOTH || m && S_IXOTH)) {
+    val &= FILE_ATTRIBUTE_READONLY;
+  }
+  if (S_ISLNK(m)) {
+    val &= FILE_ATTRIBUTE_REPARSE_POINT;
+  }
+  if (S_ISREG(m)) {
+    val &= FILE_ATTRIBUTE_NORMAL;
+  } else {
+    val &= FILE_ATTRIBUTE_SYSTEM;
+  }
+  return val;
+}
+  
+    
 
 // Handle an IRP_MJ_SET_INFORMATION request
 static void fusent_do_set_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
