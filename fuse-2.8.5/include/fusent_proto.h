@@ -129,17 +129,17 @@ typedef struct _FUSENT_RESP {
 			uint32_t written;
 		} write;
 		struct {
-		LARGE_INTEGER CreationTime;
-		LARGE_INTEGER LastAccessTime;
-		LARGE_INTEGER LastWriteTime;
-		LARGE_INTEGER ChangeTime;
-		ULONG FileAttributes;
-		LARGE_INTEGER AllocationSize;
-		LARGE_INTEGER EndOfFile;
-		ULONG NumberOfLinks;
-		BOOLEAN DeletePending = FALSE;
-		BOOLEAN Directory;
-		ULONG FileNameLength;
+			LARGE_INTEGER CreationTime;
+			LARGE_INTEGER LastAccessTime;
+			LARGE_INTEGER LastWriteTime;
+			LARGE_INTEGER ChangeTime;
+			ULONG FileAttributes;
+			LARGE_INTEGER AllocationSize;
+			LARGE_INTEGER EndOfFile;
+			ULONG NumberOfLinks;
+			BOOLEAN DeletePending
+			BOOLEAN Directory;
+			ULONG FileNameLength;
 				// WCHAR *FileName will follow the FUSENT_RESP header
 		} query;
 		struct {
