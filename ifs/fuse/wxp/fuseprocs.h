@@ -8,8 +8,7 @@ Module Name:
 
 Abstract:
 
-    This module defines all of the globally used procedures in the Fuse
-    file system.
+    This module defines all of the globally used procedures in FUSE
 
 
 --*/
@@ -22,9 +21,7 @@ Abstract:
 #include <ntdddisk.h>
 #include <ntddstor.h>
 
-#include "nodetype.h"
 #include "FuseStruc.h"
-#include "FuseData.h"
 #include "hashmap.h"
 
 #ifndef INLINE
@@ -33,37 +30,6 @@ Abstract:
 
 extern hashmap ModuleMap;
 extern hashmap UserspaceMap;
-
-// taken from fatprocs.h
-typedef enum _FUSE_FLUSH_TYPE {
-    
-    NoFlush = 0,
-    Flush,
-    FlushAndInvalidate,
-    FlushWithoutPurge
-
-} FUSE_FLUSH_TYPE;
-
-typedef enum _TYPE_OF_OPEN {
-
-    UnopenedFileObject = 1,
-    UserFileOpen,
-    UserDirectoryOpen,
-    UserVolumeOpen,
-    VirtualVolumeFile,
-    DirectoryFile,
-    EaFile
-
-} TYPE_OF_OPEN;
-
-TYPE_OF_OPEN
-FuseDecodeFileObject (
-    IN PFILE_OBJECT FileObject,
-    OUT PVCB *Vcb,
-    OUT PFCB *FcbOrDcb,
-    OUT PCCB *Ccb
-    );
-
 
 //
 //  The FSD Level dispatch routines.   These routines are called by the
@@ -178,122 +144,6 @@ FuseFsdWrite (                           //  implemented in FuseIo.c
     IN PIRP Irp
     );
 
-NTSTATUS
-FuseMount (                              //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
-
-NTSTATUS
-FuseRequest (                            //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
-
-//
-//  The following macro is used to determine if an FSD thread can block
-//  for I/O or wait for a resource.  It returns TRUE if the thread can
-//  block and FALSE otherwise.  This attribute can then be used to call
-//  the FSD & FSP common work routine with the proper wait value.
-//
-
-#define CanFsdWait(IRP) IoIsOperationSynchronous(Irp)
-
-//
-//  The following is implemented in FuseIo.c, and does what is says.
-//
-
-NTSTATUS
-FuseFlushFile (
-    IN PIRP_CONTEXT IrpContext,
-    IN PFCB Fcb,
-    IN FUSE_FLUSH_TYPE FlushType
-    );
-
-NTSTATUS
-FuseFlushDirectory (
-    IN PIRP_CONTEXT IrpContext,
-    IN PDCB Dcb,
-    IN FUSE_FLUSH_TYPE FlushType
-    );
-
-NTSTATUS
-FuseFlushFuse (
-    IN PIRP_CONTEXT IrpContext,
-    IN PVCB Vcb
-    );
-
-NTSTATUS
-FuseFlushVolume (
-    IN PIRP_CONTEXT IrpContext,
-    IN PVCB Vcb,
-    IN FUSE_FLUSH_TYPE FlushType
-    );
-
-NTSTATUS
-FuseHijackIrpAndFlushDevice (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp,
-    IN PDEVICE_OBJECT TargetDeviceObject
-    );
-
-VOID
-FuseFlushFuseEntries (
-    IN PIRP_CONTEXT IrpContext,
-    IN PVCB Vcb,
-    IN ULONG Cluster,
-    IN ULONG Count
-);
-
-VOID
-FuseFlushDirentForFile (
-    IN PIRP_CONTEXT IrpContext,
-    IN PFCB Fcb
-);
-
-
-
-//
-//  The following procedure is used by the FSP and FSD routines to complete
-//  an IRP.
-//
-//  Note that this macro allows either the Irp or the IrpContext to be
-//  null, however the only legal order to do this in is:
-//
-//      FuseCompleteRequest( NULL, Irp, Status );  // completes Irp & preserves context
-//      ...
-//      FuseCompleteRequest( IrpContext, NULL, DontCare ); // deallocates context
-//
-//  This would typically be done in order to pass a "naked" IrpContext off to
-//  the Fsp for post processing, such as read ahead.
-//
-
-VOID
-FuseCompleteRequest_Real (
-    IN PIRP_CONTEXT IrpContext,
-    IN PIRP Irp,
-    IN NTSTATUS Status
-    );
-
-#define FuseCompleteRequest(IRPCONTEXT,IRP,STATUS) { \
-    FuseCompleteRequest_Real(IRPCONTEXT,IRP,STATUS); \
-}
-
-BOOLEAN
-FuseIsIrpTopLevel (
-    IN PIRP Irp
-    );
-
-//
-//  The Following routine makes a popup
-//
-
-VOID
-FusePopUpFileCorrupt (
-    IN PIRP_CONTEXT IrpContext,
-    IN PFCB Fcb
-    );
-
 //
 //  Here are the callbacks used by the I/O system for checking for fast I/O or
 //  doing a fast query info call, or doing fast lock calls.
@@ -392,275 +242,101 @@ FuseReleaseForCcFlush (
     );
 
 //
-//  The following macro is used to determine is a file has been deleted.
+//  Utility functions
 //
-//      BOOLEAN
-//      IsFileDeleted (
-//          IN PIRP_CONTEXT IrpContext,
-//          IN PFCB Fcb
-//          );
-//
-
-#define IsFileDeleted(IRPCONTEXT,FCB)                      \
-    (FlagOn((FCB)->FcbState, FCB_STATE_DELETE_ON_CLOSE) && \
-     ((FCB)->UncleanCount == 0))
-
-//
-//  The following macro is used by the dispatch routines to determine if
-//  an operation is to be done with or without Write Through.
-//
-//      BOOLEAN
-//      IsFileWriteThrough (
-//          IN PFILE_OBJECT FileObject,
-//          IN PVCB Vcb
-//          );
-//
-
-#define IsFileWriteThrough(FO,VCB) (             \
-    BooleanFlagOn((FO)->Flags, FO_WRITE_THROUGH) \
-)
-
-//
-//  The following macro is used to set the is fast i/o possible field in
-//  the common part of the nonpaged fcb
-//
-//
-//      BOOLEAN
-//      FuseIsFastIoPossible (
-//          IN PFCB Fcb
-//          );
-//
-
-#define FuseIsFastIoPossible(FCB) ((BOOLEAN)                                                            \
-    (((FCB)->FcbCondition != FcbGood || !FsRtlOplockIsFastIoPossible( &(FCB)->Specific.Fcb.Oplock )) ? \
-        FastIoIsNotPossible                                                                            \
-    :                                                                                                  \
-        (!FsRtlAreThereCurrentFileLocks( &(FCB)->Specific.Fcb.FileLock ) &&                            \
-         ((FCB)->NonPaged->OutstandingAsyncWrites == 0) &&                                               \
-         !FlagOn( (FCB)->Vcb->VcbState, VCB_STATE_FLAG_WRITE_PROTECTED ) ?                             \
-            FastIoIsPossible                                                                           \
-        :                                                                                              \
-            FastIoIsQuestionable                                                                       \
-        )                                                                                              \
-    )                                                                                                  \
-)
-
-//
-//  The following macro is used to detemine if the file object is opened
-//  for read only access (i.e., it is not also opened for write access or
-//  delete access).
-//
-//      BOOLEAN
-//      IsFileObjectReadOnly (
-//          IN PFILE_OBJECT FileObject
-//          );
-//
-
-#define IsFileObjectReadOnly(FO) (!((FO)->WriteAccess | (FO)->DeleteAccess))
-
-
-//
-//  The following two macro are used by the Fsd/Fsp exception handlers to
-//  process an exception.  The first macro is the exception filter used in the
-//  Fsd/Fsp to decide if an exception should be handled at this level.
-//  The second macro decides if the exception is to be finished off by
-//  completing the IRP, and cleaning up the Irp Context, or if we should
-//  bugcheck.  Exception values such as STATUS_FILE_INVALID (raised by
-//  VerfySup.c) cause us to complete the Irp and cleanup, while exceptions
-//  such as accvio cause us to bugcheck.
-//
-//  The basic structure for fsd/fsp exception handling is as follows:
-//
-//  FuseFsdXxx(...)
-//  {
-//      try {
-//
-//          ...
-//
-//      } except(FuseExceptionFilter( IrpContext, GetExceptionCode() )) {
-//
-//          Status = FuseProcessException( IrpContext, Irp, GetExceptionCode() );
-//      }
-//
-//      Return Status;
-//  }
-//
-//  To explicitly raise an exception that we expect, such as
-//  STATUS_FILE_INVALID, use the below macro FuseRaiseStatus().  To raise a
-//  status from an unknown origin (such as CcFlushCache()), use the macro
-//  FuseNormalizeAndRaiseStatus.  This will raise the status if it is expected,
-//  or raise STATUS_UNEXPECTED_IO_ERROR if it is not.
-//
-//  If we are vicariously handling exceptions without using FuseProcessException(),
-//  if there is the possibility that we raised that exception, one *must*
-//  reset the IrpContext so a subsequent raise in the course of handling this
-//  request that is *not* explicit, i.e. like a pagein error, does not get
-//  spoofed into believing that the first raise status is the reason the second
-//  occured.  This could have really nasty consequences.
-//
-//  It is an excellent idea to always FuseResetExceptionState in these cases.
-//
-//  Note that when using these two macros, the original status is placed in
-//  IrpContext->ExceptionStatus, signaling FuseExceptionFilter and
-//  FuseProcessException that the status we actually raise is by definition
-//  expected.
-//
-
-ULONG
-FuseExceptionFilter (
-    IN PIRP_CONTEXT IrpContext,
-    IN PEXCEPTION_POINTERS ExceptionPointer
-    );
-
-#if DBG
-ULONG
-FuseBugCheckExceptionFilter (
-    IN PEXCEPTION_POINTERS ExceptionPointer
-    );
-#endif
 
 NTSTATUS
-FuseProcessException (
-    IN PIRP_CONTEXT IrpContext,
+FuseCopyDirectoryControl (
+    IN PIRP Irp
+    );
+
+NTSTATUS
+FuseCopyInformation (
+    IN PIRP Irp
+    );
+
+NTSTATUS
+FuseCopyVolumeInformation (
+    IN PIRP Irp
+    );
+
+NTSTATUS
+FuseQueryBasicInfo (
+    IN OUT PFILE_BASIC_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryStandardInfo (
+    IN OUT PFILE_STANDARD_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryNameInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_NAME_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsVolumeInfo (
     IN PIRP Irp,
-    IN NTSTATUS ExceptionCode
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_VOLUME_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsSizeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_SIZE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsDeviceInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_DEVICE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsAttributeInfo (
+    IN PIRP Irp,
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_ATTRIBUTE_INFORMATION Buffer,
+    IN OUT PLONG Length
+    );
+
+NTSTATUS
+FuseQueryFsFullSizeInfo (
+    IN PIO_STACK_LOCATION IrpSp,
+    IN OUT PFILE_FS_FULL_SIZE_INFORMATION Buffer,
+    IN OUT PLONG Length
     );
 
 //
-//  VOID
-//  FuseRaiseStatus (
-//      IN PRIP_CONTEXT IrpContext,
-//      IN NT_STATUS Status
-//  );
-//
+//  Module name extraction
 //
 
-#if DBG
-#define DebugBreakOnStatus(S) {                                                      \
-    if (FuseTestRaisedStatus) {                                                       \
-        if ((S) == STATUS_DISK_CORRUPT_ERROR || (S) == STATUS_FILE_CORRUPT_ERROR) {  \
-            DbgPrint( "Fuse: Breaking on interesting raised status (%08x)\n", (S) );  \
-            DbgPrint( "Fuse: Set FuseTestRaisedStatus @ %08x to 0 to disable\n",       \
-                      &FuseTestRaisedStatus );                                        \
-            DbgBreakPoint();                                                         \
-        }                                                                            \
-    }                                                                                \
-}
-#else
-#define DebugBreakOnStatus(S)
-#endif
+LPWSTR
+FuseExtractModuleName (
+    IN PIRP Irp,
+    OUT PULONG Length
+    );
 
-#define FuseRaiseStatus(IRPCONTEXT,STATUS) {             \
-    (IRPCONTEXT)->ExceptionStatus = (STATUS);           \
-    DebugBreakOnStatus( (STATUS) )                      \
-    ExRaiseStatus( (STATUS) );                          \
-}
-    
-#define FuseResetExceptionState( IRPCONTEXT ) {          \
-    (IRPCONTEXT)->ExceptionStatus = STATUS_SUCCESS;     \
-}
+LPWSTR
+FuseAllocateModuleName (
+    IN PIRP Irp
+    );
 
-//
-//  VOID
-//  FuseNormalAndRaiseStatus (
-//      IN PRIP_CONTEXT IrpContext,
-//      IN NT_STATUS Status
-//  );
-//
-
-#define FuseNormalizeAndRaiseStatus(IRPCONTEXT,STATUS) {                         \
-    (IRPCONTEXT)->ExceptionStatus = (STATUS);                                   \
-    ExRaiseStatus(FsRtlNormalizeNtstatus((STATUS),STATUS_UNEXPECTED_IO_ERROR)); \
-}
-
-
-//
-//  The following macros are used to establish the semantics needed
-//  to do a return from within a try-finally clause.  As a rule every
-//  try clause must end with a label call try_exit.  For example,
-//
-//      try {
-//              :
-//              :
-//
-//      try_exit: NOTHING;
-//      } finally {
-//
-//              :
-//              :
-//      }
-//
-//  Every return statement executed inside of a try clause should use the
-//  try_return macro.  If the compiler fully supports the try-finally construct
-//  then the macro should be
-//
-//      #define try_return(S)  { return(S); }
-//
-//  If the compiler does not support the try-finally construct then the macro
-//  should be
-//
-//      #define try_return(S)  { S; goto try_exit; }
-//
-
-#define try_return(S) { S; goto try_exit; }
-#define try_leave(S) { S; leave; }
-
-//
-//  These routines define the FileId for Fuse.  Lacking a fixed/uniquifiable
-//  notion, we simply come up with one which is unique in a given snapshot
-//  of the volume.  As long as the parent directory is not moved or compacted,
-//  it may even be permanent.
-//
-
-//
-//  The internal information used to identify the fcb/dcb on the
-//  volume is the byte offset of the dirent of the file on disc.
-//  Our root always has fileid 0.  Fuse32 roots are chains and can
-//  use the LBO of the cluster, 12/16 roots use the lbo in the Vcb.
-//
-
-#define FuseGenerateFileIdFromDirentOffset(ParentDcb,DirentOffset)                                   \
-    ((ParentDcb) ? ((NodeType(ParentDcb) != Fuse_NTC_ROOT_DCB || FuseIsFuse32((ParentDcb)->Vcb)) ?   \
-                  FuseGetLboFromIndex( (ParentDcb)->Vcb,                                             \
-                                      (ParentDcb)->FirstClusterOfFile ) :                            \
-                  (ParentDcb)->Vcb->AllocationSupport.RootDirectoryLbo) +                            \
-                 (DirentOffset)                                                                      \
-                  :                                                                                  \
-                 0)
-
-//
-//
-
-#define FuseGenerateFileIdFromFcb(Fcb)                                                               \
-        FuseGenerateFileIdFromDirentOffset( (Fcb)->ParentDcb, (Fcb)->DirentOffsetWithinDirectory )
-
-//
-//  Wrap to handle the ./.. cases appropriately.  Note that we commute NULL parent to 0. This would
-//  only occur in an illegal root ".." entry.
-//
-
-#define FuseDOT    ((ULONG)0x2020202E)
-#define FuseDOTDOT ((ULONG)0x20202E2E)
-
-#define FuseGenerateFileIdFromDirentAndOffset(Dcb,Dirent,DirentOffset)                               \
-    ((*((PULONG)(Dirent)->FileName)) == FuseDOT ? FuseGenerateFileIdFromFcb(Dcb) :                    \
-     ((*((PULONG)(Dirent)->FileName)) == FuseDOTDOT ? ((Dcb)->ParentDcb ?                            \
-                                                       FuseGenerateFileIdFromFcb((Dcb)->ParentDcb) : \
-                                                       0) :                                         \
-      FuseGenerateFileIdFromDirentOffset(Dcb,DirentOffset)))
-
-
-//
-//  BOOLEAN
-//  FuseDeviceIsFuseFsdo(
-//      IN PDEVICE_OBJECT D
-//      );
-//
-//  Evaluates to TRUE if the supplied device object is one of the file system devices
-//  we created at initialisation.
-//
-
-#define FuseDeviceIsFuseFsdo( D)  (((D) == FuseData.DiskFileSystemDeviceObject) || ((D) == FuseData.CdromFileSystemDeviceObject))
+VOID
+FuseCopyModuleName (
+    IN PIRP Irp,
+    OUT WCHAR* Destination,
+    OUT PULONG Length
+    );
 
 #endif // _FUSEPROCS_
 

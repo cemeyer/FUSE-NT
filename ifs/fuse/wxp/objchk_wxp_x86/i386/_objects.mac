@@ -4,7 +4,7 @@
  $(OBJ_PATH)\$O\fuseinit.obj \
  $(OBJ_PATH)\$O\fuseio.obj \
  $(OBJ_PATH)\$O\hashmap.obj \
- $(OBJ_PATH)\$O\filobsup.obj \
+ $(OBJ_PATH)\$O\fusequery.obj \
 
 
 _RES_FILE=$(OBJ_PATH)\$O\fuse.res

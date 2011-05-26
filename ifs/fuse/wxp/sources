@@ -9,4 +9,4 @@ SOURCES=Fuse.rc \
         FuseInit.c  \
         FuseIo.c  \
         HashMap.c  \
-        filobsup.c
+        FuseQuery.c

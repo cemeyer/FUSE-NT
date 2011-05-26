@@ -178,14 +178,15 @@ VOID module_struct_delete(val VoidModuleStruct) {
     ExFreePool(ModuleStruct->ModuleName);
 
     //
-    //  Free the module and userspace IRP lists, completing each one
-    //  (what else is there to do with them?)
+    //  Free the module and userspace IRP lists, canceling each one
     //
 
     CurrentEntry = ModuleStruct->ModuleIrpList;
     while(CurrentEntry) {
         NextEntry = CurrentEntry->Next;
-        IoCompleteRequest(CurrentEntry->Irp, IO_NO_INCREMENT);
+
+        CurrentEntry->Irp->IoStatus.Status = STATUS_CANCELLED;
+        IoCancelIrp(CurrentEntry->Irp);
         ExFreePool(CurrentEntry);
         CurrentEntry = NextEntry;
     }
@@ -193,7 +194,9 @@ VOID module_struct_delete(val VoidModuleStruct) {
     CurrentEntry = ModuleStruct->UserspaceIrpList;
     while(CurrentEntry) {
         NextEntry = CurrentEntry->Next;
-        IoCompleteRequest(CurrentEntry->Irp, IO_NO_INCREMENT);
+
+        CurrentEntry->Irp->IoStatus.Status = STATUS_CANCELLED;
+        IoCancelIrp(CurrentEntry->Irp);
         ExFreePool(CurrentEntry);
         CurrentEntry = NextEntry;
     }
@@ -201,7 +204,9 @@ VOID module_struct_delete(val VoidModuleStruct) {
     CurrentEntry = ModuleStruct->OutstandingIrpList;
     while(CurrentEntry) {
         NextEntry = CurrentEntry->Next;
-        IoCompleteRequest(CurrentEntry->Irp, IO_NO_INCREMENT);
+
+        CurrentEntry->Irp->IoStatus.Status = STATUS_CANCELLED;
+        IoCancelIrp(CurrentEntry->Irp);
         ExFreePool(CurrentEntry);
         CurrentEntry = NextEntry;
     }
