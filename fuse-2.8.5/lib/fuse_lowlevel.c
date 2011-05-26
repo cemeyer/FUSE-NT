@@ -1758,7 +1758,7 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 	fusent_sendmsg(req, resp, buflen);
 }
 
-static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, stat *st)
+static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, struct stat *st)
 {
   char *buf;
   char *basename;
