@@ -1784,7 +1784,7 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
   resp->params.query.FileAttributes = fusent_translate_attributes(st->st_mode);
   resp->params.query.AllocationSize.u.LowPart = st->st_blocks * 512;
   resp->params.query.EndOfFile.u.LowPart = st->st_size;
-  resp->params.query.NumberOfLinks = st->st_nlink
+  resp->params.query.NumberOfLinks = st->st_nlink;
   resp->params.query.Directory = S_ISDIR(st->st_mode);
   resp->params.query.FileNameLength = sizeof(basename);
 
