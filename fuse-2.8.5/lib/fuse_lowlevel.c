@@ -1795,6 +1795,7 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
 // Handle an IRP_MJ_CREATE call
 static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
+  char *basename;
 	// Some of the behavior here probably doesn't match
 	// one-to-one with NT. Does anyone actually use
 	// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
@@ -1850,7 +1851,6 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 
 		// inode for create() should be inode of parent, apparently
 		fuse_ino_t par_inode;
-		char *basename;
 		if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
 			err = ENOENT;
 			goto reply_err_nt;
