@@ -110,9 +110,9 @@ typedef struct _FUSENT_DIR_INFORMATION {
   LARGE_INTEGER AllocationSize;
   ULONG         FileAttributes;
   ULONG         FileNameLength;
-  WCHAR         FileName; // the rest of the filename shall follow. 
-						  // Use FileNameLength or NextEntryOffset 
-						  // to find the start of the next entry.
+  WCHAR         FileName[1]; // the rest of the filename shall follow. 
+						     // Use FileNameLength or NextEntryOffset 
+						     // to find the start of the next entry.
 } FUSENT_DIR_INFORMATION;
 
 typedef struct _FUSENT_RESP {
