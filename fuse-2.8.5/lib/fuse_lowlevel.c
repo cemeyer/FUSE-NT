@@ -1756,6 +1756,27 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 	fusent_sendmsg(req, resp, buflen);
 }
 
+static ULONG fusent_translate_attributes(mode_t m)
+{
+  ULONG val = 0;
+  if (S_ISBLK(m) && S_ISCHR(m)) {
+    val &= FILE_ATTRIBUTE_DEVICE;
+  }
+  if (!(m && S_IWUSR || m && S_IXUSR || m && S_IWGRP || m && S_IXGRP ||
+      m && S_IWOTH || m && S_IXOTH)) {
+    val &= FILE_ATTRIBUTE_READONLY;
+  }
+  if (S_ISLNK(m)) {
+    val &= FILE_ATTRIBUTE_REPARSE_POINT;
+  }
+  if (S_ISREG(m)) {
+    val &= FILE_ATTRIBUTE_NORMAL;
+  } else {
+    val &= FILE_ATTRIBUTE_SYSTEM;
+  }
+  return val;
+}
+
 static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, struct stat *st)
 {
   char *buf;
@@ -2222,7 +2243,6 @@ static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	req->response_hijack_buf = NULL;
 
 	if (outh.error) {
-		free(giantbuf);
 		err = -outh.error;
 		goto reply_err_nt;
 	}
@@ -2235,26 +2255,6 @@ reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
-static ULONG fusent_translate_attributes(mode_t m)
-{
-  ULONG val = 0;
-  if (S_ISBLK(m) && S_ISCHR(m)) {
-    val &= FILE_ATTRIBUTE_DEVICE;
-  }
-  if (!(m && S_IWUSR || m && S_IXUSR || m && S_IWGRP || m && S_IXGRP ||
-      m && S_IWOTH || m && S_IXOTH)) {
-    val &= FILE_ATTRIBUTE_READONLY;
-  }
-  if (S_ISLNK(m)) {
-    val &= FILE_ATTRIBUTE_REPARSE_POINT;
-  }
-  if (S_ISREG(m)) {
-    val &= FILE_ATTRIBUTE_NORMAL;
-  } else {
-    val &= FILE_ATTRIBUTE_SYSTEM;
-  }
-  return val;
-}
   
     
 
