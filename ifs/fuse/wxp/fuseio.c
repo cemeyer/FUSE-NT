@@ -134,7 +134,7 @@ FuseAddIrpToModuleList (
         PWSTR ModuleName = ModuleStruct->ModuleName;
         ULONG FileNameLength = (wcslen(ModuleName) + 1) * sizeof(WCHAR);
         ULONG StackLength = Irp->StackCount * sizeof(IO_STACK_LOCATION);
-        ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
+        ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength;
 
         //
         //  Check that the output buffer is large enough to contain the work request
@@ -240,7 +240,7 @@ FuseCheckForWork (
                 ULONG ReqSize;
 
                 PWSTR ModuleName = ModuleStruct->ModuleName;
-                ULONG StackLength = sizeof(IO_STACK_LOCATION);
+                ULONG StackLength = UserspaceIrp->StackCount * sizeof(IO_STACK_LOCATION);
 
                 DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n", ModuleName);
 
