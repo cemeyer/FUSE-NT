@@ -1805,6 +1805,9 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
 	resp->params.query.Directory = S_ISDIR(st->mode);
 	resp->params.query.FileNameLength = bnlen;
 
+	resp->params.query.DeletePending = FALSE;
+	fusent_unixtime_to_wintime(0, &resp->params.query.CreationTime);
+
 	fusent_sendmsg(req, resp, buflen);
 	free(resp);
 }
