@@ -13,6 +13,7 @@
 #include <ddk/ntddk.h>
 #include <ddk/winddk.h>
 #include <stdint.h>
+#include <time.h>
 
 #include <iconv.h>
 
@@ -27,6 +28,9 @@ int fusent_decode_irp(IRP *irp, IO_STACK_LOCATION *iosp, uint8_t *outirptype,
 //
 // Returns negative on error, or the number of bytes output on success.
 size_t fusent_transcode(void *src, size_t s_len, void *dst, size_t d_len, const char *in_enc, const char *out_enc);
+
+// Translates (roughly) a Unix time_t (seconds since unix epoch) to a Windows' LARGE_INTEGER time (100-ns intervals since Jan 1, 1601).
+void fusent_unixtime_to_wintime(time_t t, LARGE_INTEGER *wintime);
 
 #endif /* IRPDECODE_H */
 #endif /* __CYGWIN__ */

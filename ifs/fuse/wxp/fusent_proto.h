@@ -1,4 +1,3 @@
-
 #ifndef NTPROTO_H
 #define NTPROTO_H
 
@@ -86,25 +85,26 @@ typedef struct _FUSENT_DIR_INFORMATION {
 	// for an idea of what each of these fields 
 	// should do.
 	// 
-  ULONG         NextEntryOffset;
-  ULONG         FileIndex;
-  LARGE_INTEGER CreationTime;
-  LARGE_INTEGER LastAccessTime;
-  LARGE_INTEGER LastWriteTime;
-  LARGE_INTEGER ChangeTime;
-  LARGE_INTEGER EndOfFile;
-  LARGE_INTEGER AllocationSize;
-  ULONG         FileAttributes;
-  ULONG         FileNameLength;
-  WCHAR         FileName[1]; // the rest of the filename shall follow. 
-						     // Use FileNameLength or NextEntryOffset 
-						     // to find the start of the next entry.
+	ULONG         NextEntryOffset;
+	ULONG         FileIndex;
+	LARGE_INTEGER CreationTime;
+	LARGE_INTEGER LastAccessTime;
+	LARGE_INTEGER LastWriteTime;
+	LARGE_INTEGER ChangeTime;
+	LARGE_INTEGER EndOfFile;
+	LARGE_INTEGER AllocationSize;
+	ULONG         FileAttributes;
+	ULONG         FileNameLength;
+	WCHAR         FileName[1]; // the rest of the filename shall follow. 
+	// Use FileNameLength or NextEntryOffset 
+	// to find the start of the next entry.
 } FUSENT_DIR_INFORMATION;
 
 typedef struct _FUSENT_RESP {
-	PIRP pirp; PFILE_OBJECT fop;
+	PIRP pirp;
+	PFILE_OBJECT fop;
 	int error; // all high-level fuse operations return int
-		   // negative is error (-errno); zero is OK
+	// negative is error (-errno); zero is OK
 	NTSTATUS status;
 	union {
 		struct {
@@ -126,7 +126,7 @@ typedef struct _FUSENT_RESP {
 			BOOLEAN DeletePending;
 			BOOLEAN Directory;
 			ULONG FileNameLength;
-				// WCHAR *FileName will follow the FUSENT_RESP header
+			// WCHAR *FileName will follow the FUSENT_RESP header
 		} query;
 		struct {
 			uint32_t buflen;
