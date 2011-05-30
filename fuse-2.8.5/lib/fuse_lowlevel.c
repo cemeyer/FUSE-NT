@@ -1850,12 +1850,15 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 
 	// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
 	fuse_ino_t fino;
+
 	char *basename;
+	char stbuf[sizeof(struct fuse_create_in) + 
+		sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
+	char *outbuf, *outbuf2;
 
 	if (fuse_flags & O_CREAT) {
-		char stbuf[sizeof(struct fuse_create_in) + FUSENT_MAX_PATH];
-		char *outbuf = stbuf + sizeof(struct fuse_create_in),
-		     *outbuf2 = outbuf;
+		outbuf = stbuf + sizeof(struct fuse_create_in);
+		outbuf2 = outbuf;
 
 		// Convert and then reset the cd
 		iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
@@ -1886,9 +1889,8 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 		llargs = (char *)args;
 	}
 	else {
-		char stbuf[sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
-		char *outbuf = stbuf + sizeof(struct fuse_open_in),
-		     *outbuf2 = outbuf;
+		outbuf = stbuf + sizeof(struct fuse_open_in);
+		outbuf2 = outbuf;
 
 		// Convert and then reset the cd
 		iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
