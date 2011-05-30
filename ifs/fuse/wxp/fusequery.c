@@ -4,14 +4,13 @@
 #include "fuseprocs.h"
 #include "fusent_proto.h"
 #include "hashmap.h"
-#include "fusestruc.h"
 
 NTSTATUS
 FuseCopyDirectoryControl (
     IN PIRP Irp
     )
 {
-    NTSTATUS Status = STATUS_SUCCESS;
+    NTSTATUS Status = STATUS_NO_MORE_FILES;
     PIO_STACK_LOCATION IrpSp;
     FILE_INFORMATION_CLASS FileInformationClass;
     ULONG FileIndex;
@@ -25,30 +24,9 @@ FuseCopyDirectoryControl (
     ULONG FileNameLength;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
-
-    //
-    //  I think that since this buffer is bigger (usually a page),
-    //  the pointer to it is given by UserBuffer instead. If we were
-    //  to revisit this IRP from a different thread, I think we would
-    //  need to page back in the buffer using MmGetSystemAddressForMdlSafe
-    //
     
     Length = IrpSp->Parameters.QueryDirectory.Length;
-    Buffer = Irp->AssociatedIrp.SystemBuffer;
-    
-    if(!Buffer) {
-        Buffer = Irp->UserBuffer;
-
-        if(!Buffer) {
-            Buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-
-            if(!Buffer) {
-                DbgPrint("Could not find output buffer...");
-
-                return STATUS_UNSUCCESSFUL;
-            }
-        }
-    }
+    Buffer = FuseMapUserBuffer(Irp);
 
     FileInformationClass = IrpSp->Parameters.QueryDirectory.FileInformationClass;
     FileIndex = IrpSp->Parameters.QueryDirectory.FileIndex;

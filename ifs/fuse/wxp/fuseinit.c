@@ -30,10 +30,7 @@ DriverEntry(
     IN PUNICODE_STRING RegistryPath
     );
 
-VOID
-FuseUnload(
-    IN PDRIVER_OBJECT DriverObject
-    );
+DRIVER_UNLOAD FuseUnload;
 
 
 NTSTATUS
@@ -174,7 +171,7 @@ Return Value:
 
 
 VOID
-FuseUnload(
+FuseUnload (
     IN PDRIVER_OBJECT DriverObject
     )
 

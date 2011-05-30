@@ -21,7 +21,6 @@ Abstract:
 #include <ntdddisk.h>
 #include <ntddstor.h>
 
-#include "FuseStruc.h"
 #include "hashmap.h"
 
 #ifndef INLINE
@@ -42,107 +41,58 @@ extern hashmap UserspaceMap;
 //  or post the request to the FSP work queue for FSP level processing.
 //
 
-NTSTATUS
-FuseFsdCleanup (                         //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+// implemented in FuseIo.c
+__drv_dispatchType(IRP_MJ_CLEANUP)
+DRIVER_DISPATCH FuseFsdCleanup;
 
-NTSTATUS
-FuseFsdClose (                           //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_CLOSE)
+DRIVER_DISPATCH FuseFsdClose;
 
-NTSTATUS
-FuseFsdCreate (                          //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_CREATE)
+DRIVER_DISPATCH FuseFsdCreate;
 
-NTSTATUS
-FuseFsdDeviceControl (                   //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_DEVICE_CONTROL)
+DRIVER_DISPATCH FuseFsdDeviceControl;
 
-NTSTATUS
-FuseFsdDirectoryControl (                //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_DIRECTORY_CONTROL)
+DRIVER_DISPATCH FuseFsdDirectoryControl;
 
-NTSTATUS
-FuseFsdSetEa (                           //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_SET_EA)
+DRIVER_DISPATCH FuseFsdSetEa;
 
-NTSTATUS
-FuseFsdQueryInformation (                //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_QUERY_INFORMATION)
+DRIVER_DISPATCH FuseFsdQueryInformation;
 
-NTSTATUS
-FuseFsdSetInformation (                  //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_SET_INFORMATION)
+DRIVER_DISPATCH FuseFsdSetInformation;
 
-NTSTATUS
-FuseFsdFlushBuffers (                    //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_WRITE)
+DRIVER_DISPATCH FuseFsdWrite;
 
-NTSTATUS
-FuseFsdFileSystemControl (               //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_READ)
+DRIVER_DISPATCH FuseFsdRead;
 
-NTSTATUS
-FuseFsdLockControl (                     //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_FLUSH_BUFFERS)
+DRIVER_DISPATCH FuseFsdFlushBuffers;
 
-NTSTATUS
-FuseFsdPnp (                            //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_QUERY_VOLUME_INFORMATION)
+DRIVER_DISPATCH FuseFsdQueryVolumeInformation;
 
-NTSTATUS
-FuseFsdRead (                            //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_SET_VOLUME_INFORMATION)
+DRIVER_DISPATCH FuseFsdSetVolumeInformation;
 
-NTSTATUS
-FuseFsdShutdown (                        //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_aliasesMem
+__drv_dispatchType(IRP_MJ_FILE_SYSTEM_CONTROL)
+DRIVER_DISPATCH FuseFsdFileSystemControl;
 
-NTSTATUS
-FuseFsdQueryVolumeInformation (          //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_LOCK_CONTROL)
+DRIVER_DISPATCH FuseFsdLockControl;
 
-NTSTATUS
-FuseFsdSetVolumeInformation (            //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_SHUTDOWN)
+DRIVER_DISPATCH FuseFsdShutdown;
 
-NTSTATUS
-FuseFsdWrite (                           //  implemented in FuseIo.c
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
-    IN PIRP Irp
-    );
+__drv_dispatchType(IRP_MJ_PNP)
+DRIVER_DISPATCH FuseFsdPnp;
 
 //
 //  Here are the callbacks used by the I/O system for checking for fast I/O or
@@ -314,6 +264,11 @@ FuseQueryFsFullSizeInfo (
     IN PIO_STACK_LOCATION IrpSp,
     IN OUT PFILE_FS_FULL_SIZE_INFORMATION Buffer,
     IN OUT PLONG Length
+    );
+
+PVOID
+FuseMapUserBuffer (
+    IN OUT PIRP Irp
     );
 
 //

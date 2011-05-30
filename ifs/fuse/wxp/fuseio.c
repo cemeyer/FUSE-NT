@@ -18,7 +18,6 @@ Abstract:
 #include "fuseprocs.h"
 #include "fusent_proto.h"
 #include "hashmap.h"
-#include "fusestruc.h"
 
 NTSTATUS
 FuseAddUserspaceIrp (
@@ -33,7 +32,7 @@ FuseAddIrpToModuleList (
     IN BOOLEAN AddToModuleList
     );
 
-VOID
+NTSTATUS
 FuseCheckForWork (
     IN PMODULE_STRUCT ModuleStruct
     );
@@ -91,20 +90,16 @@ FuseAddUserspaceIrp (
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
             Status = STATUS_SUCCESS;
         } else {
+            BOOLEAN IrpCompleted;
+
             DbgPrint("Found entry in map for module %S. Adding userspace IRP to module queue\n", ModuleName);
 
             FuseAddIrpToModuleList(Irp, ModuleStruct, FALSE);
 
-            //
-            //  Mark the request as status pending. The module thread that calls
-            //  NtFsControlFile with a response will complete it, or if there is
-            //  a request to hand it off to right now, that request will complete it
-            //
-
             IoMarkIrpPending(Irp);
             Status = STATUS_PENDING;
 
-            FuseCheckForWork(ModuleStruct);
+            FuseCheckForWork(ModuleStruct);  
         }
 
         ExFreePool(ModuleName);
@@ -173,10 +168,10 @@ FuseAddIrpToModuleList (
             //
 
             if(AddToModuleList) {
-                ModuleStruct->ModuleIrpList = (PIRP_LIST) ExAllocatePool(PagedPool, sizeof(IRP_LIST));
+                ModuleStruct->ModuleIrpList = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), 'esuF');
                 LastEntry = ModuleStruct->ModuleIrpList;
             } else {
-                ModuleStruct->UserspaceIrpList = (PIRP_LIST) ExAllocatePool(PagedPool, sizeof(IRP_LIST));
+                ModuleStruct->UserspaceIrpList = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), 'esuF');
                 LastEntry = ModuleStruct->UserspaceIrpList;
             }
         } else {
@@ -185,7 +180,7 @@ FuseAddIrpToModuleList (
             //  Insert the new entry at the end of the list
             //
 
-            LastEntry->Next = (PIRP_LIST) ExAllocatePool(PagedPool, sizeof(IRP_LIST));
+            LastEntry->Next = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), 'esuF');
             LastEntry = LastEntry->Next;
         }
 
@@ -210,11 +205,13 @@ FuseAddIrpToModuleList (
     return TRUE;
 }
 
-VOID
+NTSTATUS
 FuseCheckForWork (
     IN PMODULE_STRUCT ModuleStruct
     )
 {
+    NTSTATUS Status = STATUS_SUCCESS;
+
     //
     //  Check if there is both a userspace request and a module
     //  IRP to which to hand it off
@@ -236,15 +233,119 @@ FuseCheckForWork (
                 PIRP ModuleIrp = ModuleIrpListEntry->Irp;
                 PIRP UserspaceIrp = UserspaceIrpListEntry->Irp;
                 PIO_STACK_LOCATION UserspaceIrpSp;
+                PIO_STACK_LOCATION ModuleIrpSp;
                 FUSENT_REQ* FuseNtReq;
                 WCHAR* FileName;
                 ULONG FileNameLength;
-                PULONG FileNameLengthField;
+                ULONG ReqSize;
 
                 PWSTR ModuleName = ModuleStruct->ModuleName;
-                ULONG StackLength = UserspaceIrp->StackCount * sizeof(IO_STACK_LOCATION);
+                ULONG StackLength = sizeof(IO_STACK_LOCATION);
 
                 DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n", ModuleName);
+
+                UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
+                ModuleIrpSp = IoGetCurrentIrpStackLocation(ModuleIrp);
+
+                FuseNtReq = (FUSENT_REQ*) ModuleIrp->AssociatedIrp.SystemBuffer;
+
+                //
+                //  Calculate the size of the buffer needed before attempting to do any copying
+                //
+
+                if(FlagOn(UserspaceIrp->Flags, IRP_CREATE_OPERATION)) {
+
+                    FileName = UserspaceIrpSp->FileObject->FileName.Buffer;
+                
+                    //
+                    //  Strip out the module name from the file name
+                    //
+
+                    FileName ++;
+                    while(FileName[0] != L'\\' && FileName[0] != L'\0') {
+                        FileName ++;
+                    }
+
+                    FileNameLength = (wcslen(FileName) + 1) * sizeof(WCHAR);
+
+                    ReqSize = sizeof(FUSENT_REQ) + StackLength + sizeof(uint32_t) + FileNameLength;
+                } else if(FlagOn(UserspaceIrp->Flags, IRP_WRITE_OPERATION)) {
+
+                    ReqSize = sizeof(FUSENT_REQ) + StackLength + sizeof(uint32_t) + sizeof(LARGE_INTEGER) + UserspaceIrpSp->Parameters.Write.Length;
+                } else {
+
+                    ReqSize = sizeof(FUSENT_REQ) + StackLength;
+                }
+
+                if(ReqSize <= ModuleIrpSp->Parameters.FileSystemControl.OutputBufferLength) {
+
+                    //
+                    //  The supplied buffer is large enough; perform the copy
+                    //
+
+                    FuseNtReq->pirp = UserspaceIrp;
+                    FuseNtReq->fop = UserspaceIrpSp->FileObject;
+                    FuseNtReq->irp = *UserspaceIrp;
+
+                    memcpy(FuseNtReq->iostack, UserspaceIrp + 1, StackLength);
+                
+                    if(FlagOn(UserspaceIrp->Flags, IRP_CREATE_OPERATION)) {
+                        PULONG FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
+                        *FileNameLengthField = FileNameLength;
+
+                        memcpy(FileNameLengthField + 1, FileName, FileNameLength);
+
+                    } else if(FlagOn(UserspaceIrp->Flags, IRP_WRITE_OPERATION)) {
+                        PULONG BufLenField;
+                        PVOID WriteBufferField;
+                    
+                        BufLenField = (PULONG) (((PCHAR) FuseNtReq) + ReqSize);
+                        *BufLenField = UserspaceIrpSp->Parameters.Write.Length;
+
+                        WriteBufferField = (PVOID) (BufLenField + 1);
+                        memcpy(WriteBufferField, UserspaceIrp->AssociatedIrp.SystemBuffer, UserspaceIrpSp->Parameters.Write.Length);
+                    }
+
+                    ModuleIrp->IoStatus.Information = ReqSize;
+
+                    //
+                    //  Remove the head IRP from the userspace IRP queue
+                    //
+
+                    ModuleStruct->UserspaceIrpList = UserspaceIrpListEntry->Next;
+
+                    //
+                    //  If we removed the first entry of the queue, update the end
+                    //  pointer to NULL so that it is not pointing to an invalid entry
+                    //
+
+                    if(!ModuleStruct->UserspaceIrpList) {
+                        ModuleStruct->UserspaceIrpListEnd = NULL;
+                    }
+
+                    //
+                    //  Add the userspace IRP to the list of outstanding IRPs (i.e. the IRPs
+                    //  for which the module has yet to send a reply)
+                    //
+
+                    if(ModuleStruct->OutstandingIrpListEnd) {
+                        ModuleStruct->OutstandingIrpListEnd->Next = UserspaceIrpListEntry;
+                        ModuleStruct->OutstandingIrpListEnd = ModuleStruct->OutstandingIrpListEnd->Next;
+                    } else {
+                        ModuleStruct->OutstandingIrpList = UserspaceIrpListEntry;
+                        ModuleStruct->OutstandingIrpListEnd = ModuleStruct->OutstandingIrpList;
+                    }
+                } else {
+
+                    //
+                    //  The buffer was too small; bail
+                    //
+
+                    Status = STATUS_INVALID_BUFFER_SIZE;
+
+                    DbgPrint("Request larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
+                                ReqSize, ModuleIrpSp->Parameters.FileSystemControl.OutputBufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
+                }
 
                 //
                 //  Remove the head entry from the module IRP queue
@@ -262,64 +363,6 @@ FuseCheckForWork (
                 }
 
                 //
-                //  Remove the head IRP from the userspace IRP queue
-                //
-
-                ModuleStruct->UserspaceIrpList = UserspaceIrpListEntry->Next;
-
-                //
-                //  If we removed the first entry of the queue, update the end
-                //  pointer to NULL so that it is not pointing to an invalid entry
-                //
-
-                if(!ModuleStruct->UserspaceIrpList) {
-                    ModuleStruct->UserspaceIrpListEnd = NULL;
-                }
-
-                //
-                //  Fill out the FUSE module request using the userspace IRP
-                //
-
-                UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
-
-                FuseNtReq = (FUSENT_REQ*) ModuleIrp->AssociatedIrp.SystemBuffer;
-
-                FuseNtReq->pirp = UserspaceIrp;
-                FuseNtReq->fop = UserspaceIrpSp->FileObject;
-                FuseNtReq->irp = *UserspaceIrp;
-                memcpy(FuseNtReq->iostack, UserspaceIrp + 1, StackLength);
-
-                FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
-                FileName = UserspaceIrpSp->FileObject->FileName.Buffer;
-                
-                //
-                //  Strip out the module name from the file name
-                //
-                FileName ++;
-                while(FileName[0] != L'\\' && FileName[0] != L'\0') {
-                    FileName ++;
-                }
-
-                FileNameLength = (wcslen(FileName) + 1) * sizeof(WCHAR);
-                *FileNameLengthField = FileNameLength;
-
-                memcpy(FileNameLengthField + 1, FileName, FileNameLength);
-                ModuleIrp->IoStatus.Information = sizeof(FUSENT_REQ) + StackLength + 4 + FileNameLength;
-
-                //
-                //  Add the userspace IRP to the list of outstanding IRPs (i.e. the IRPs
-                //  for which the module has yet to send a reply)
-                //
-
-                if(ModuleStruct->OutstandingIrpListEnd) {
-                    ModuleStruct->OutstandingIrpListEnd->Next = UserspaceIrpListEntry;
-                    ModuleStruct->OutstandingIrpListEnd = ModuleStruct->OutstandingIrpListEnd->Next;
-                } else {
-                    ModuleStruct->OutstandingIrpList = UserspaceIrpListEntry;
-                    ModuleStruct->OutstandingIrpListEnd = ModuleStruct->OutstandingIrpList;
-                }
-
-                //
                 //  Free the module IRP entry from memory
                 //
 
@@ -329,13 +372,14 @@ FuseCheckForWork (
                 //  Complete the module's IRP to signal that the module should process it
                 //
 
-                ModuleIrp->IoStatus.Status = STATUS_SUCCESS;
                 IoCompleteRequest(ModuleIrp, IO_NO_INCREMENT);
             }
         } __finally {
             ExReleaseFastMutex(&ModuleStruct->ModuleLock);
         }
     }
+
+    return Status;
 }
 
 NTSTATUS
@@ -404,49 +448,28 @@ FuseCopyResponse (
                     //  We've found a match. Complete the userspace request
                     //
 
-                    if(FlagOn(UserspaceIrp->Flags, IRP_MJ_READ)) {
-                        __try {
-                            ULONG BufferLength = FuseNtResp->params.read.buflen;
-                            PVOID ReadBuffer = (&FuseNtResp->params.read.buflen) + 1;
+                    UserspaceIrp->IoStatus.Status = -FuseNtResp->error;
 
-                            if(UserspaceIrpSp->Parameters.FileSystemControl.OutputBufferLength >= BufferLength) {
-                                ProbeForRead(ReadBuffer, BufferLength, sizeof(CHAR));
+                    if(FlagOn(UserspaceIrp->Flags, IRP_READ_OPERATION)) {
+                        ULONG BufferLength = FuseNtResp->params.read.buflen;
+                        PVOID ReadBuffer = (&FuseNtResp->params.read.buflen) + 1;
+                        PVOID SystemBuffer = FuseMapUserBuffer(UserspaceIrp);
 
-                                memcpy(UserspaceIrp->AssociatedIrp.SystemBuffer, ReadBuffer, BufferLength);
-
-                                UserspaceIrp->IoStatus.Information = BufferLength;
-                            } else {
-                                DbgPrint("Read buffer larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
-                                    BufferLength, UserspaceIrpSp->Parameters.FileSystemControl.OutputBufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
-
-                                Status = STATUS_INVALID_BUFFER_SIZE;
-                            }
-                        } __except(EXCEPTION_EXECUTE_HANDLER) {
-                            DbgPrint("Read buffer is invalid for read on file %S\n", UserspaceIrpSp->FileObject->FileName.Buffer);
-
-                            Status = STATUS_INVALID_USER_BUFFER;
-                        }
-                    } else if(FlagOn(UserspaceIrp->Flags, IRP_MJ_WRITE)) {
-                        __try {
-                            ULONG BufferLength = FuseNtResp->params.write.written;
-                            PVOID ReadBuffer = (&FuseNtResp->params.read.buflen) + 1;
-
-                            ProbeForRead(ReadBuffer, BufferLength, sizeof(CHAR));
-
-                            memcpy(UserspaceIrp->AssociatedIrp.SystemBuffer, ReadBuffer, BufferLength);
+                        if(UserspaceIrpSp->Parameters.Read.Length >= BufferLength) {
+                            memcpy(SystemBuffer, ReadBuffer, BufferLength);
 
                             UserspaceIrp->IoStatus.Information = BufferLength;
+                        } else {
+                            DbgPrint("Read buffer larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
+                                BufferLength, UserspaceIrpSp->Parameters.FileSystemControl.OutputBufferLength - sizeof(uint32_t), UserspaceIrpSp->FileObject->FileName.Buffer);
 
-                        } __except(EXCEPTION_EXECUTE_HANDLER) {
-                            DbgPrint("Read buffer is invalid for read on file %S\n", UserspaceIrpSp->FileObject->FileName.Buffer);
+                            UserspaceIrp->IoStatus.Status = STATUS_INVALID_USER_BUFFER;
+                            Status = STATUS_INVALID_BUFFER_SIZE;
                         }
+                    } else if(FlagOn(UserspaceIrp->Flags, IRP_WRITE_OPERATION)) {
+                        UserspaceIrp->IoStatus.Information = FuseNtResp->params.write.written;
                     }
 
-                    if(FuseNtResp->error != 0) {
-                        UserspaceIrp->IoStatus.Status = -FuseNtResp->error;
-                    } else {
-                        UserspaceIrp->IoStatus.Status = FuseNtResp->status;
-                    }
                     IoCompleteRequest(UserspaceIrp, IO_NO_INCREMENT);
 
                     //
@@ -468,8 +491,6 @@ FuseCopyResponse (
                     //
 
                     ExFreePool(CurrentEntry);
-
-                    Status = STATUS_SUCCESS;
                 } else {
 
                     //
@@ -521,13 +542,7 @@ FuseCheckUnmountModule (
             //  The file object matches, so perform a dismount
             //
 
-            ExAcquireFastMutex(&ModuleStruct->ModuleLock);
-
             hmap_remove(&ModuleMap, ModuleName);
-
-            //
-            //  No need to "release" the lock, as the mutex has been freed
-            //
 
             return TRUE;
         }
@@ -536,9 +551,10 @@ FuseCheckUnmountModule (
     return FALSE;
 }
 
+__drv_aliasesMem
 NTSTATUS
 FuseFsdFileSystemControl (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -584,7 +600,7 @@ FuseFsdFileSystemControl (
         //  module hash map
         //
 
-        ModuleStruct = (PMODULE_STRUCT) ExAllocatePool(PagedPool, sizeof(MODULE_STRUCT));
+        ModuleStruct = (PMODULE_STRUCT) ExAllocatePoolWithTag(PagedPool, sizeof(MODULE_STRUCT), 'esuF');
         RtlZeroMemory(ModuleStruct, sizeof(MODULE_STRUCT));
         ExInitializeFastMutex(&ModuleStruct->ModuleLock);
 
@@ -595,7 +611,7 @@ FuseFsdFileSystemControl (
         //
 
         ModuleStruct->ModuleFileObject = IrpSp->FileObject;
-        ModuleStruct->ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (wcslen(ModuleName) + 1));
+        ModuleStruct->ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR) * (wcslen(ModuleName) + 1), 'esuF');
         RtlStringCchCopyW(ModuleStruct->ModuleName, wcslen(ModuleName) + 1, ModuleName);
         hmap_add(&ModuleMap, ModuleStruct->ModuleName, ModuleStruct);
 
@@ -681,7 +697,7 @@ FuseFsdFileSystemControl (
 
 NTSTATUS
 FuseFsdCleanup (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -695,7 +711,7 @@ FuseFsdCleanup (
 
 NTSTATUS
 FuseFsdClose (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -710,7 +726,7 @@ FuseFsdClose (
 
 NTSTATUS
 FuseFsdCreate (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -724,7 +740,7 @@ FuseFsdCreate (
 
 NTSTATUS
 FuseFsdRead (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -732,12 +748,23 @@ FuseFsdRead (
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdRead called on '%wZ'\n", &IrpSp->FileObject->FileName);
-    return STATUS_SUCCESS;
+
+    //
+    //  Don't enqueue the read if 0 bytes are requested to be read
+    //
+
+    if(IrpSp->Parameters.Read.Length == 0) {
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+        return STATUS_SUCCESS;
+    }
+
+    return FuseAddUserspaceIrp(Irp, IrpSp);
 }
 
 NTSTATUS
 FuseFsdWrite (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -745,12 +772,23 @@ FuseFsdWrite (
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     DbgPrint("FuseFsdWrite called on '%wZ'\n", &IrpSp->FileObject->FileName);
-    return STATUS_SUCCESS;
+
+    //
+    //  Don't enqueue the write if 0 bytes are requested to be written
+    //
+
+    if(IrpSp->Parameters.Write.Length == 0) {
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+        return STATUS_SUCCESS;
+    }
+
+    return FuseAddUserspaceIrp(Irp, IrpSp);
 }
 
 NTSTATUS
 FuseFsdFlushBuffers (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -760,7 +798,7 @@ FuseFsdFlushBuffers (
 
 NTSTATUS
 FuseFsdLockControl (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -770,7 +808,7 @@ FuseFsdLockControl (
 
 NTSTATUS
 FuseFsdPnp (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -780,7 +818,7 @@ FuseFsdPnp (
 
 NTSTATUS
 FuseFsdShutdown (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -790,7 +828,7 @@ FuseFsdShutdown (
 
 NTSTATUS
 FuseFsdDeviceControl (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -800,7 +838,7 @@ FuseFsdDeviceControl (
 
 NTSTATUS
 FuseFsdDirectoryControl (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -813,7 +851,7 @@ FuseFsdDirectoryControl (
 
 NTSTATUS
 FuseFsdQueryInformation (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -826,7 +864,7 @@ FuseFsdQueryInformation (
 
 NTSTATUS
 FuseFsdSetInformation (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -836,7 +874,7 @@ FuseFsdSetInformation (
 
 NTSTATUS
 FuseFsdSetEa (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -846,7 +884,7 @@ FuseFsdSetEa (
 
 NTSTATUS
 FuseFsdQueryVolumeInformation (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -859,7 +897,7 @@ FuseFsdQueryVolumeInformation (
 
 NTSTATUS
 FuseFsdSetVolumeInformation (
-    IN PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
+    IN PDEVICE_OBJECT VolumeDeviceObject,
     IN PIRP Irp
     )
 {
@@ -1045,7 +1083,7 @@ FuseAllocateModuleName (
     ULONG ModuleNameLength;
 
     ModuleNamePointer = FuseExtractModuleName(Irp, &ModuleNameLength);
-    ModuleName = (WCHAR*) ExAllocatePool(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1));
+    ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1), 'esuF');
 
     memcpy(ModuleName, ModuleNamePointer, sizeof(WCHAR) * ModuleNameLength);
     ModuleName[ModuleNameLength] = L'\0';
@@ -1064,5 +1102,32 @@ FuseCopyModuleName (
 
     memcpy(Destination, ModuleName, sizeof(WCHAR) * (*Length));
     Destination[*Length] = L'\0';
+}
+
+PVOID
+FuseMapUserBuffer (
+    IN OUT PIRP Irp
+    )
+{
+    //
+    // If there is no Mdl, then we must be in the Fsd, and we can simply
+    // return the UserBuffer field from the Irp.
+    //
+
+    if (Irp->MdlAddress == NULL) {
+
+        return Irp->UserBuffer;
+    
+    } else {
+
+        PVOID Address = MmGetSystemAddressForMdlSafe( Irp->MdlAddress, NormalPagePriority );
+
+        if (Address == NULL) {
+
+            ExRaiseStatus( STATUS_INSUFFICIENT_RESOURCES );
+        }
+
+        return Address;
+    }
 }
 

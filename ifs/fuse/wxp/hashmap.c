@@ -27,7 +27,7 @@ VOID mk_hmap(hashmap* hmap, uint32_t (*hash_fn)(key),
 				) {
 					
     
-	hmap->map = (key_val_pair*) ExAllocatePool(PagedPool, HMAP_PAGE_SIZE);
+	hmap->map = (key_val_pair*) ExAllocatePoolWithTag(PagedPool, HMAP_PAGE_SIZE, 'esuF');
     RtlZeroMemory(hmap->map, HMAP_PAGE_SIZE);
 	hmap->size = 0;
 	hmap->capacity = HMAP_PRESET_SIZE;
@@ -167,6 +167,7 @@ BOOLEAN str_eq_fn(key a, key b) {
     }
 }
 
+__drv_releasesResource(FastMutexType)
 VOID module_struct_delete(val VoidModuleStruct) {
     PMODULE_STRUCT ModuleStruct = (PMODULE_STRUCT) VoidModuleStruct;
     PIRP_LIST CurrentEntry, NextEntry;
@@ -178,7 +179,7 @@ VOID module_struct_delete(val VoidModuleStruct) {
     ExFreePool(ModuleStruct->ModuleName);
 
     //
-    //  Free the module and userspace IRP lists, canceling each one
+    //  Free the module and userspace IRP lists, completing each one
     //
 
     CurrentEntry = ModuleStruct->ModuleIrpList;
@@ -186,7 +187,7 @@ VOID module_struct_delete(val VoidModuleStruct) {
         NextEntry = CurrentEntry->Next;
 
         CurrentEntry->Irp->IoStatus.Status = STATUS_CANCELLED;
-        IoCancelIrp(CurrentEntry->Irp);
+        IoCompleteRequest(CurrentEntry->Irp, IO_NO_INCREMENT);
         ExFreePool(CurrentEntry);
         CurrentEntry = NextEntry;
     }
@@ -196,7 +197,7 @@ VOID module_struct_delete(val VoidModuleStruct) {
         NextEntry = CurrentEntry->Next;
 
         CurrentEntry->Irp->IoStatus.Status = STATUS_CANCELLED;
-        IoCancelIrp(CurrentEntry->Irp);
+        IoCompleteRequest(CurrentEntry->Irp, IO_NO_INCREMENT);
         ExFreePool(CurrentEntry);
         CurrentEntry = NextEntry;
     }
@@ -206,7 +207,7 @@ VOID module_struct_delete(val VoidModuleStruct) {
         NextEntry = CurrentEntry->Next;
 
         CurrentEntry->Irp->IoStatus.Status = STATUS_CANCELLED;
-        IoCancelIrp(CurrentEntry->Irp);
+        IoCompleteRequest(CurrentEntry->Irp, IO_NO_INCREMENT);
         ExFreePool(CurrentEntry);
         CurrentEntry = NextEntry;
     }
