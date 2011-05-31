@@ -1781,7 +1781,10 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
 {
 	size_t bnlen = sizeof(WCHAR) * wcslen(basename);
 	size_t buflen = sizeof(FUSENT_RESP) + bnlen;
+    FUSENT_FILE_INFORMATION *fileinfo;
 	FUSENT_RESP *resp = malloc(buflen);
+
+    fileinfo = (FUSENT_FILE_INFORMATION*) resp;
 
 	// Copy the basename (non-null terminated) after the header:
 	memcpy(resp + 1, basename, bnlen);
@@ -1790,23 +1793,22 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
 	fusent_fill_resp(resp, pirp, fop, 0);
 
 	// Fill in the rest:
-	fusent_unixtime_to_wintime(st->atime, &resp->params.query.LastAccessTime);
-	fusent_unixtime_to_wintime(st->mtime, &resp->params.query.LastWriteTime);
+	fusent_unixtime_to_wintime(st->atime, &fileinfo->LastAccessTime);
+	fusent_unixtime_to_wintime(st->mtime, &fileinfo->LastWriteTime);
 
 	// Take the most recent of {mtime,ctime} for windows' "changetime"
 	time_t ctime = (st->mtime > st->ctime)? st->mtime : st->ctime;
-	fusent_unixtime_to_wintime(ctime, &resp->params.query.ChangeTime);
+	fusent_unixtime_to_wintime(ctime, &fileinfo->ChangeTime);
 
-	fusent_unixmode_to_winattr(st->mode, &resp->params.query.FileAttributes);
+	fusent_unixmode_to_winattr(st->mode, &fileinfo->FileAttributes);
 
-	resp->params.query.AllocationSize.QuadPart = ((int64_t)st->blocks) * 512;
-	resp->params.query.EndOfFile.QuadPart = (int64_t)st->size;
-	resp->params.query.NumberOfLinks = st->nlink;
-	resp->params.query.Directory = S_ISDIR(st->mode);
-	resp->params.query.FileNameLength = bnlen;
+	fileinfo->AllocationSize.QuadPart = ((int64_t)st->blocks) * 512;
+	fileinfo->EndOfFile.QuadPart = (int64_t)st->size;
+	fileinfo->NumberOfLinks = st->nlink;
+	fileinfo->Directory = S_ISDIR(st->mode);
 
-	resp->params.query.DeletePending = FALSE;
-	fusent_unixtime_to_wintime(0, &resp->params.query.CreationTime);
+	fileinfo->DeletePending = FALSE;
+	fusent_unixtime_to_wintime(0, &fileinfo->CreationTime);
 
 	fusent_sendmsg(req, resp, buflen);
 	free(resp);
