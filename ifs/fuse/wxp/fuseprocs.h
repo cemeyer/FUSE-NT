@@ -21,8 +21,8 @@ Abstract:
 #include <ntdddisk.h>
 #include <ntddstor.h>
 
-#include "fusent_proto.h"
 #include "hashmap.h"
+#include "fusent_proto.h"
 
 #ifndef INLINE
 #define INLINE __inline
@@ -199,13 +199,15 @@ FuseReleaseForCcFlush (
 NTSTATUS
 FuseCopyDirectoryControl (
     IN OUT PIRP Irp,
-    IN FUSENT_DIR_INFORMATION* ModuleDirInformation,
+    IN PFILE_DIRECTORY_INFORMATION ModuleDirInformation,
     IN ULONG ModuleDirInformationLength
     );
 
 NTSTATUS
 FuseCopyInformation (
-    IN OUT PIRP Irp
+    IN OUT PIRP Irp,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength
     );
 
 NTSTATUS
@@ -216,12 +218,16 @@ FuseCopyVolumeInformation (
 NTSTATUS
 FuseQueryBasicInfo (
     IN OUT PFILE_BASIC_INFORMATION Buffer,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength,
     IN OUT PLONG Length
     );
 
 NTSTATUS
 FuseQueryStandardInfo (
     IN OUT PFILE_STANDARD_INFORMATION Buffer,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength,
     IN OUT PLONG Length
     );
 
@@ -229,6 +235,8 @@ NTSTATUS
 FuseQueryNameInfo (
     IN PIO_STACK_LOCATION IrpSp,
     IN OUT PFILE_NAME_INFORMATION Buffer,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength,
     IN OUT PLONG Length
     );
 

@@ -289,13 +289,13 @@ FuseCheckForWork (
 
                     memcpy(FuseNtReq->iostack, UserspaceIrp + 1, StackLength);
                 
-                    if(FlagOn(UserspaceIrp->Flags, IRP_CREATE_OPERATION)) {
+                    if(UserspaceIrpSp->MajorFunction == IRP_MJ_CREATE) {
                         PULONG FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
                         *FileNameLengthField = FileNameLength;
 
                         memcpy(FileNameLengthField + 1, FileName, FileNameLength);
 
-                    } else if(FlagOn(UserspaceIrp->Flags, IRP_WRITE_OPERATION)) {
+                    } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_WRITE) {
                         PULONG BufLenField;
                         PVOID WriteBufferField;
                     
@@ -441,8 +441,8 @@ FuseCopyResponse (
 
                     PIO_STACK_LOCATION UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
 
-                    DbgPrint("Match found for response from module %S. Completing userspace request. Status is %d for major code %x on file %S\n",
-                        ModuleStruct->ModuleName, FuseNtResp->status, UserspaceIrp->Flags, UserspaceIrpSp->FileObject->FileName.Buffer);
+                    DbgPrint("Match found for response from module %S. Completing userspace request. Status is %d and error code is %d on file %S\n",
+                        ModuleStruct->ModuleName, FuseNtResp->status, FuseNtResp->error, UserspaceIrpSp->FileObject->FileName.Buffer);
 
                     //
                     //  We've found a match. Complete the userspace request
@@ -450,7 +450,7 @@ FuseCopyResponse (
 
                     UserspaceIrp->IoStatus.Status = -FuseNtResp->error;
 
-                    if(FlagOn(UserspaceIrp->Flags, IRP_READ_OPERATION)) {
+                    if(UserspaceIrpSp->MajorFunction == IRP_MJ_READ) {
                         ULONG BufferLength = FuseNtResp->params.read.buflen;
                         PVOID ReadBuffer = (&FuseNtResp->params.read.buflen) + 1;
                         PVOID SystemBuffer = FuseMapUserBuffer(UserspaceIrp);
@@ -463,11 +463,25 @@ FuseCopyResponse (
                             DbgPrint("Read buffer larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
                                 BufferLength, UserspaceIrpSp->Parameters.FileSystemControl.OutputBufferLength - sizeof(uint32_t), UserspaceIrpSp->FileObject->FileName.Buffer);
 
-                            UserspaceIrp->IoStatus.Status = STATUS_INVALID_USER_BUFFER;
+                            UserspaceIrp->IoStatus.Status = STATUS_INVALID_BUFFER_SIZE;
                             Status = STATUS_INVALID_BUFFER_SIZE;
                         }
-                    } else if(FlagOn(UserspaceIrp->Flags, IRP_WRITE_OPERATION)) {
+                    } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_WRITE) {
                         UserspaceIrp->IoStatus.Information = FuseNtResp->params.write.written;
+                    } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_QUERY_INFORMATION) {
+                        ULONG BufferLength = FuseNtResp->params.query.buflen;
+                        FUSENT_FILE_INFORMATION* FileInformation = (FUSENT_FILE_INFORMATION*) (FuseNtResp + 1);
+
+                        if(BufferLength >= sizeof(FUSENT_FILE_INFORMATION)) {
+
+                            Status = FuseCopyInformation(UserspaceIrp, FileInformation, BufferLength);
+                        } else {
+                            DbgPrint("Query information buffer is not as large as expected. Expected: %d, given: %d for file %S\n",
+                                sizeof(FUSENT_FILE_INFORMATION), BufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
+
+                            UserspaceIrp->IoStatus.Status = STATUS_INVALID_BUFFER_SIZE;
+                            Status = STATUS_INVALID_BUFFER_SIZE;
+                        }
                     }
 
                     IoCompleteRequest(UserspaceIrp, IO_NO_INCREMENT);
@@ -509,10 +523,10 @@ FuseCopyResponse (
 
     } else {
 
-        DbgPrint("Response from %S has a bad user buffer. Expected size: %d. Actual size: \n",
+        DbgPrint("Response from %S has a bad user buffer. Expected size: %d. Actual size: %d\n",
             ModuleStruct->ModuleName, sizeof(FUSENT_RESP), IrpSp->Parameters.DeviceIoControl.InputBufferLength);
 
-        Status = STATUS_INVALID_USER_BUFFER;
+        Status = STATUS_INVALID_BUFFER_SIZE;
     }
 
     return Status;
@@ -859,7 +873,7 @@ FuseFsdQueryInformation (
 
     DbgPrint("FuseFsdQueryInformation called on %S\n", IrpSp->FileObject->FileName.Buffer);
 
-    return FuseCopyInformation(Irp);
+    return FuseAddUserspaceIrp(Irp, IrpSp);
 }
 
 NTSTATUS
@@ -930,11 +944,9 @@ FuseFastQueryBasicInfo (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-    LONG Length = sizeof(FILE_BASIC_INFORMATION);
-
     DbgPrint("FuseFastQueryBasicInfo\n");
 
-    return FuseQueryBasicInfo(Buffer, &Length) == STATUS_SUCCESS;
+    return FALSE;
 }
 
 BOOLEAN
@@ -946,11 +958,9 @@ FuseFastQueryStdInfo (
     IN PDEVICE_OBJECT DeviceObject
     )
 {
-    LONG Length = sizeof(FILE_STANDARD_INFORMATION);
-
     DbgPrint("FuseFastQueryStdInfo\n");
 
-    return FuseQueryStandardInfo(Buffer, &Length) == STATUS_SUCCESS;
+    return FALSE;
 }
 
 BOOLEAN

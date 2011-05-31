@@ -79,26 +79,18 @@ typedef struct _FUSENT_MOUNT { // weird special-case "response"
 	// mtopts aligned)
 } FUSENT_MOUNT;
 
-typedef struct _FUSENT_DIR_INFORMATION {
-	//
-	// See msdn IRP_MJ_DIRECTORY_CONTROL
-	// for an idea of what each of these fields 
-	// should do.
-	// 
-	ULONG         NextEntryOffset;
-	ULONG         FileIndex;
-	LARGE_INTEGER CreationTime;
-	LARGE_INTEGER LastAccessTime;
-	LARGE_INTEGER LastWriteTime;
-	LARGE_INTEGER ChangeTime;
-	LARGE_INTEGER EndOfFile;
-	LARGE_INTEGER AllocationSize;
-	ULONG         FileAttributes;
-	ULONG         FileNameLength;
-	WCHAR         FileName[1]; // the rest of the filename shall follow. 
-	// Use FileNameLength or NextEntryOffset 
-	// to find the start of the next entry.
-} FUSENT_DIR_INFORMATION;
+typedef struct _FUSENT_FILE_INFORMATION {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    ULONG FileAttributes;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG NumberOfLinks;
+    BOOLEAN DeletePending;
+    BOOLEAN Directory;
+} FUSENT_FILE_INFORMATION;
 
 typedef struct _FUSENT_RESP {
 	PIRP pirp;
@@ -115,22 +107,12 @@ typedef struct _FUSENT_RESP {
 			uint32_t written;
 		} write;
 		struct {
-			LARGE_INTEGER CreationTime;
-			LARGE_INTEGER LastAccessTime;
-			LARGE_INTEGER LastWriteTime;
-			LARGE_INTEGER ChangeTime;
-			ULONG FileAttributes;
-			LARGE_INTEGER AllocationSize;
-			LARGE_INTEGER EndOfFile;
-			ULONG NumberOfLinks;
-			BOOLEAN DeletePending;
-			BOOLEAN Directory;
-			ULONG FileNameLength;
-			// WCHAR *FileName will follow the FUSENT_RESP header
+            uint32_t buflen;
+			// defined as following the FUSENT_RESP header
 		} query;
 		struct {
 			uint32_t buflen;
-			//FUSENT_DIR_INFORMATION dirinfo[0]; defined as following the FUSENT_RESP header.
+			// FILE_DIRECTORY_INFORMATION dirinfo[0]; defined as following the FUSENT_RESP header.
 		} dirctrl;
 		// potentially other kinds of responses here...
 	} params;

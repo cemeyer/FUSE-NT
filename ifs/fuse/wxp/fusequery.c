@@ -2,13 +2,13 @@
 #include <NtStatus.h>
 #include <Ntstrsafe.h>
 #include "fuseprocs.h"
-#include "fusent_proto.h"
 #include "hashmap.h"
+#include "fusent_proto.h"
 
 NTSTATUS
 FuseCopyDirectoryControl (
     IN OUT PIRP Irp,
-    IN FUSENT_DIR_INFORMATION* ModuleDirInformation,
+    IN PFILE_DIRECTORY_INFORMATION ModuleDirInformation,
     IN ULONG ModuleDirInformationLength
     )
 {
@@ -90,9 +90,9 @@ FuseCopyDirectoryControl (
             //  Make sure that we can at least read the basic fields of the directory struct
             //
 
-            while(ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) &&
+            while(ModuleDirInformationLength >= sizeof(FILE_DIRECTORY_INFORMATION) &&
                 ModuleDirInformationLength >= ModuleDirInformation->NextEntryOffset &&
-                ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1) &&
+                ModuleDirInformationLength >= sizeof(FILE_DIRECTORY_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1) &&
                 Length >= (LONG) (sizeof(FILE_DIRECTORY_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1))) {
 
                 ULONG FileNameLength = ModuleDirInformation->FileNameLength;
@@ -153,7 +153,7 @@ FuseCopyDirectoryControl (
 
                     Length -= DirInformationLength;
                     ModuleDirInformationLength -= ModuleDirInformation->NextEntryOffset;
-                    ModuleDirInformation = (FUSENT_DIR_INFORMATION*) (((PCHAR) ModuleDirInformation) + ModuleDirInformation->NextEntryOffset);
+                    ModuleDirInformation = (PFILE_DIRECTORY_INFORMATION) (((PCHAR) ModuleDirInformation) + ModuleDirInformation->NextEntryOffset);
                     DirInfo = (PFILE_DIRECTORY_INFORMATION) (((PCHAR) DirInfo) + DirInformationLength);
 
                     // ... leave the rest of the fields in the extended directory listing blank for now
@@ -197,9 +197,9 @@ FuseCopyDirectoryControl (
 
             PFILE_NAMES_INFORMATION LastNamesInfo = NULL;
 
-            while(ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) &&
+            while(ModuleDirInformationLength >= sizeof(FILE_DIRECTORY_INFORMATION) &&
                 ModuleDirInformationLength >= ModuleDirInformation->NextEntryOffset &&
-                ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1) &&
+                ModuleDirInformationLength >= sizeof(FILE_DIRECTORY_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1) &&
                 Length >= (LONG) (sizeof(FILE_NAMES_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1))) {
 
                 WCHAR* FileName = ModuleDirInformation->FileName;
@@ -221,7 +221,7 @@ FuseCopyDirectoryControl (
 
                 Length -= NamesInformationLength;
                 ModuleDirInformationLength -= ModuleDirInformation->NextEntryOffset;
-                ModuleDirInformation = (FUSENT_DIR_INFORMATION*) (((PCHAR) ModuleDirInformation) + ModuleDirInformation->NextEntryOffset);
+                ModuleDirInformation = (PFILE_DIRECTORY_INFORMATION) (((PCHAR) ModuleDirInformation) + ModuleDirInformation->NextEntryOffset);
                 NamesInfo = (PFILE_NAMES_INFORMATION) (((PCHAR) NamesInfo) + NamesInformationLength);
             }
 
@@ -245,7 +245,9 @@ FuseCopyDirectoryControl (
 
 NTSTATUS
 FuseCopyInformation (
-    IN OUT PIRP Irp
+    IN OUT PIRP Irp,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength
     )
 {
     NTSTATUS Status = STATUS_SUCCESS;
@@ -273,25 +275,25 @@ FuseCopyInformation (
         //  individual routines to fill in the buffer.
         //
 
-        FuseQueryBasicInfo(&AllInfo->BasicInformation, &Length);
-        FuseQueryStandardInfo(&AllInfo->StandardInformation, &Length);
-        FuseQueryNameInfo(IrpSp, &AllInfo->NameInformation, &Length);
+        FuseQueryBasicInfo(&AllInfo->BasicInformation, ModuleFileInformation, ModuleFileInformationLength, &Length);
+        FuseQueryStandardInfo(&AllInfo->StandardInformation, ModuleFileInformation, ModuleFileInformationLength, &Length);
+        FuseQueryNameInfo(IrpSp, &AllInfo->NameInformation, ModuleFileInformation, ModuleFileInformationLength, &Length);
 
         break;
 
     case FileBasicInformation:
 
-        FuseQueryBasicInfo(&AllInfo->BasicInformation, &Length);
+        FuseQueryBasicInfo(&AllInfo->BasicInformation, ModuleFileInformation, ModuleFileInformationLength, &Length);
         break;
 
     case FileStandardInformation:
 
-        FuseQueryStandardInfo(&AllInfo->StandardInformation, &Length);
+        FuseQueryStandardInfo(&AllInfo->StandardInformation, ModuleFileInformation, ModuleFileInformationLength, &Length);
         break;
 
     case FileNameInformation:
 
-        FuseQueryNameInfo(IrpSp, &AllInfo->NameInformation, &Length);
+        FuseQueryNameInfo(IrpSp, &AllInfo->NameInformation, ModuleFileInformation, ModuleFileInformationLength, &Length);
         break;
 
     default:
@@ -327,6 +329,8 @@ FuseCopyInformation (
 NTSTATUS
 FuseQueryBasicInfo (
     IN OUT PFILE_BASIC_INFORMATION Buffer,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength,
     IN OUT PLONG Length
     )
 {
@@ -349,11 +353,11 @@ FuseQueryBasicInfo (
 
         KeQuerySystemTime(&Time);
 
-        Buffer->FileAttributes = FILE_ATTRIBUTE_NORMAL;
-        Buffer->ChangeTime = Time;
-        Buffer->CreationTime = Time;
-        Buffer->LastAccessTime = Time;
-        Buffer->LastWriteTime = Time;
+        Buffer->FileAttributes = ModuleFileInformation->FileAttributes;
+        Buffer->ChangeTime = ModuleFileInformation->ChangeTime;
+        Buffer->CreationTime = ModuleFileInformation->CreationTime;
+        Buffer->LastAccessTime = ModuleFileInformation->LastAccessTime;
+        Buffer->LastWriteTime = ModuleFileInformation->LastWriteTime;
 
         *Length -= InformationLength;
     }
@@ -364,6 +368,8 @@ FuseQueryBasicInfo (
 NTSTATUS
 FuseQueryStandardInfo (
     IN OUT PFILE_STANDARD_INFORMATION Buffer,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength,
     IN OUT PLONG Length
     )
 {
@@ -387,17 +393,14 @@ FuseQueryStandardInfo (
         FileSize.QuadPart = 0;
 
         // the size of the file as allocated on disk--for us this will just be the file size
-        Buffer->AllocationSize = FileSize;
+        Buffer->AllocationSize = ModuleFileInformation->AllocationSize;
 
         // the position of the byte following the last byte in this file
-        Buffer->EndOfFile = FileSize;
+        Buffer->EndOfFile = ModuleFileInformation->EndOfFile;
 
-        Buffer->DeletePending = FALSE;
-        Buffer->Directory = FALSE;
-
-        // number of hard links to the file...I'm not sure that we have a way to determine
-        // this. Let's set it to 1 for now
-        Buffer->NumberOfLinks = 1;
+        Buffer->DeletePending = ModuleFileInformation->DeletePending;
+        Buffer->Directory = ModuleFileInformation->Directory;
+        Buffer->NumberOfLinks = ModuleFileInformation->NumberOfLinks;
 
         *Length -= InformationLength;
     }
@@ -409,6 +412,8 @@ NTSTATUS
 FuseQueryNameInfo (
     IN PIO_STACK_LOCATION IrpSp,
     IN OUT PFILE_NAME_INFORMATION Buffer,
+    IN FUSENT_FILE_INFORMATION* ModuleFileInformation,
+    IN ULONG ModuleFileInformationLength,
     IN OUT PLONG Length
     )
 {
