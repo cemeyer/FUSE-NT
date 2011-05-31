@@ -1783,6 +1783,8 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
     FUSENT_FILE_INFORMATION *fileinfo;
 	FUSENT_RESP *resp = malloc(buflen);
 
+    resp->params.query.buflen = sizeof(FUSENT_FILE_INFORMATION);
+
     fileinfo = (FUSENT_FILE_INFORMATION*) (resp + 1);
 
 	// Fill in the standard header bits:
