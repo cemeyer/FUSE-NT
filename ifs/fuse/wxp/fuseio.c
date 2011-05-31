@@ -846,7 +846,7 @@ FuseFsdDirectoryControl (
 
     DbgPrint("FuseFsdDirectoryControl called on %S\n", IrpSp->FileObject->FileName.Buffer);
 
-    return FuseCopyDirectoryControl(Irp);
+    return FuseCopyDirectoryControl(Irp, NULL, 0);
 }
 
 NTSTATUS

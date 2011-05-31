@@ -21,6 +21,7 @@ Abstract:
 #include <ntdddisk.h>
 #include <ntddstor.h>
 
+#include "fusent_proto.h"
 #include "hashmap.h"
 
 #ifndef INLINE
@@ -197,17 +198,19 @@ FuseReleaseForCcFlush (
 
 NTSTATUS
 FuseCopyDirectoryControl (
-    IN PIRP Irp
+    IN OUT PIRP Irp,
+    IN FUSENT_DIR_INFORMATION* ModuleDirInformation,
+    IN ULONG ModuleDirInformationLength
     );
 
 NTSTATUS
 FuseCopyInformation (
-    IN PIRP Irp
+    IN OUT PIRP Irp
     );
 
 NTSTATUS
 FuseCopyVolumeInformation (
-    IN PIRP Irp
+    IN OUT PIRP Irp
     );
 
 NTSTATUS

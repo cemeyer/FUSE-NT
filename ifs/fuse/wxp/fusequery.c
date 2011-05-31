@@ -7,7 +7,9 @@
 
 NTSTATUS
 FuseCopyDirectoryControl (
-    IN PIRP Irp
+    IN OUT PIRP Irp,
+    IN FUSENT_DIR_INFORMATION* ModuleDirInformation,
+    IN ULONG ModuleDirInformationLength
     )
 {
     NTSTATUS Status = STATUS_NO_MORE_FILES;
@@ -19,9 +21,6 @@ FuseCopyDirectoryControl (
 
     PFILE_DIRECTORY_INFORMATION DirInfo;
     PFILE_NAMES_INFORMATION NamesInfo;
-    LARGE_INTEGER Time;
-    WCHAR* FileName;
-    ULONG FileNameLength;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     
@@ -44,38 +43,134 @@ FuseCopyDirectoryControl (
     case FileIdBothDirectoryInformation:
 
         DirInfo = (PFILE_DIRECTORY_INFORMATION) Buffer;
-        FileName = L"hello";
-        FileNameLength = wcslen(FileName);
 
-        KeQuerySystemTime(&Time);
+        if(!ModuleDirInformation) {
+            LARGE_INTEGER Time;
+            WCHAR* FileName;
+            ULONG FileNameLength;
 
-        DirInfo->NextEntryOffset = 0;
-        DirInfo->FileIndex = 0;
-        DirInfo->CreationTime = Time;
-        DirInfo->LastAccessTime = Time;
-        DirInfo->LastWriteTime = Time;
-        DirInfo->ChangeTime = Time;
-        DirInfo->EndOfFile.QuadPart = 0;
-        DirInfo->AllocationSize = DirInfo->EndOfFile;
-        DirInfo->FileAttributes = FILE_ATTRIBUTE_NORMAL;
-        DirInfo->FileNameLength = FileNameLength;
-        RtlStringCchCopyW(DirInfo->FileName, FileNameLength, FileName);
+            FileName = L"hello";
+            FileNameLength = wcslen(FileName);
 
-        if(FileInformationClass == FileDirectoryInformation) {
+            KeQuerySystemTime(&Time);
 
-            Length -= sizeof(FILE_DIRECTORY_INFORMATION);
-        } else if(FileDirectoryInformation == FileFullDirectoryInformation) {
+            DirInfo->NextEntryOffset = 0;
+            DirInfo->FileIndex = 0;
+            DirInfo->CreationTime = Time;
+            DirInfo->LastAccessTime = Time;
+            DirInfo->LastWriteTime = Time;
+            DirInfo->ChangeTime = Time;
+            DirInfo->EndOfFile.QuadPart = 0;
+            DirInfo->AllocationSize = DirInfo->EndOfFile;
+            DirInfo->FileAttributes = FILE_ATTRIBUTE_NORMAL;
+            DirInfo->FileNameLength = FileNameLength;
+            RtlStringCchCopyW(DirInfo->FileName, FileNameLength, FileName);
 
-            Length -= sizeof(FILE_FULL_DIR_INFORMATION);
-        } else if(FileDirectoryInformation == FileIdFullDirectoryInformation) {
+            if(FileInformationClass == FileDirectoryInformation) {
 
-            Length -= sizeof(FILE_ID_FULL_DIR_INFORMATION);
-        } else if(FileDirectoryInformation == FileBothDirectoryInformation) {
+                Length -= sizeof(FILE_DIRECTORY_INFORMATION);
+            } else if(FileDirectoryInformation == FileFullDirectoryInformation) {
 
-            Length -= sizeof(FILE_BOTH_DIR_INFORMATION);
-        } else if(FileDirectoryInformation == FileIdBothDirectoryInformation) {
+                Length -= sizeof(FILE_FULL_DIR_INFORMATION);
+            } else if(FileDirectoryInformation == FileIdFullDirectoryInformation) {
 
-            Length -= sizeof(FILE_ID_BOTH_DIR_INFORMATION);
+                Length -= sizeof(FILE_ID_FULL_DIR_INFORMATION);
+            } else if(FileDirectoryInformation == FileBothDirectoryInformation) {
+
+                Length -= sizeof(FILE_BOTH_DIR_INFORMATION);
+            } else if(FileDirectoryInformation == FileIdBothDirectoryInformation) {
+
+                Length -= sizeof(FILE_ID_BOTH_DIR_INFORMATION);
+            }
+        } else {
+
+            PFILE_DIRECTORY_INFORMATION LastDirInfo = NULL;
+
+            //
+            //  Make sure that we can at least read the basic fields of the directory struct
+            //
+
+            while(ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) &&
+                ModuleDirInformationLength >= ModuleDirInformation->NextEntryOffset &&
+                ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1) &&
+                Length >= (LONG) (sizeof(FILE_DIRECTORY_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1))) {
+
+                ULONG FileNameLength = ModuleDirInformation->FileNameLength;
+                WCHAR* FileNameField;
+                ULONG DirInformationLength;
+
+                if(FileInformationClass == FileDirectoryInformation) {
+
+                    DirInformationLength = sizeof(FILE_DIRECTORY_INFORMATION);
+                    FileNameField = DirInfo->FileName;
+                } else if(FileDirectoryInformation == FileFullDirectoryInformation) {
+
+                    PFILE_FULL_DIR_INFORMATION FullInformation = (PFILE_FULL_DIR_INFORMATION) DirInfo;
+
+                    DirInformationLength = sizeof(FILE_FULL_DIR_INFORMATION);
+                    FileNameField = FullInformation->FileName;
+                } else if(FileDirectoryInformation == FileIdFullDirectoryInformation) {
+
+                    PFILE_ID_FULL_DIR_INFORMATION FullIdInformation = (PFILE_ID_FULL_DIR_INFORMATION) DirInfo;
+                    FullIdInformation->EaSize = 0;
+                    FullIdInformation->FileId.QuadPart = str_hash_fn(DirInfo->FileName);
+
+                    DirInformationLength = sizeof(FILE_ID_FULL_DIR_INFORMATION);
+                    FileNameField = FullIdInformation->FileName;
+                } else if(FileDirectoryInformation == FileBothDirectoryInformation) {
+
+                    PFILE_BOTH_DIR_INFORMATION BothInformation = (PFILE_BOTH_DIR_INFORMATION) DirInfo;
+
+                    DirInformationLength = sizeof(FILE_BOTH_DIR_INFORMATION);
+                    FileNameField = BothInformation->FileName;
+                } else if(FileDirectoryInformation == FileIdBothDirectoryInformation) {
+
+                    PFILE_ID_BOTH_DIR_INFORMATION IdBothInformation = (PFILE_ID_BOTH_DIR_INFORMATION) DirInfo;
+
+                    DirInformationLength = sizeof(FILE_ID_BOTH_DIR_INFORMATION);
+                    FileNameField = IdBothInformation->FileName;
+                }
+                
+                DirInformationLength += sizeof(WCHAR) * (FileNameLength - 1);
+
+                //
+                //  Directory entries must be LONGLONG aligned
+                //
+
+                DirInformationLength += sizeof(LONGLONG) - DirInformationLength % sizeof(LONGLONG);
+
+                //
+                //  If the buffer is large enough, perform the file name copy and fill in the extra fields
+                //
+
+                if(Length >= (LONG) DirInformationLength) {
+                    RtlZeroMemory(DirInfo, DirInformationLength);
+
+                    memcpy(DirInfo, ModuleDirInformation, sizeof(FILE_DIRECTORY_INFORMATION));
+                    memcpy(FileNameField, ModuleDirInformation->FileName, sizeof(WCHAR) * FileNameLength);
+
+                    LastDirInfo = DirInfo;
+
+                    Length -= DirInformationLength;
+                    ModuleDirInformationLength -= ModuleDirInformation->NextEntryOffset;
+                    ModuleDirInformation = (FUSENT_DIR_INFORMATION*) (((PCHAR) ModuleDirInformation) + ModuleDirInformation->NextEntryOffset);
+                    DirInfo = (PFILE_DIRECTORY_INFORMATION) (((PCHAR) DirInfo) + DirInformationLength);
+
+                    // ... leave the rest of the fields in the extended directory listing blank for now
+
+                } else {
+                    
+                    DirInfo->NextEntryOffset = 0;
+                    DirInfo->FileNameLength = 0;
+
+                    break;
+                }
+            }
+
+            if(LastDirInfo) {
+
+                LastDirInfo->NextEntryOffset = 0;
+            }
         }
 
         break;
@@ -83,15 +178,57 @@ FuseCopyDirectoryControl (
     case FileNamesInformation:
 
         NamesInfo = (PFILE_NAMES_INFORMATION) Buffer;
-        FileName = L"hello";
-        FileNameLength = wcslen(FileName);
+        
+        if(!ModuleDirInformation) {
 
-        NamesInfo->NextEntryOffset = 0;
-        NamesInfo->FileIndex = 0;
-        NamesInfo->FileNameLength = sizeof(WCHAR) * FileNameLength;
-        RtlStringCchCopyW(NamesInfo->FileName, FileNameLength, FileName);
+            WCHAR* FileName;
+            ULONG FileNameLength;
 
-        Length -= sizeof(FILE_NAMES_INFORMATION);
+            FileName = L"hello";
+            FileNameLength = wcslen(FileName);
+
+            NamesInfo->NextEntryOffset = 0;
+            NamesInfo->FileIndex = 0;
+            NamesInfo->FileNameLength = sizeof(WCHAR) * FileNameLength;
+            RtlStringCchCopyW(NamesInfo->FileName, FileNameLength, FileName);
+            
+            Length -= sizeof(FILE_NAMES_INFORMATION);
+        } else {
+
+            PFILE_NAMES_INFORMATION LastNamesInfo = NULL;
+
+            while(ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) &&
+                ModuleDirInformationLength >= ModuleDirInformation->NextEntryOffset &&
+                ModuleDirInformationLength >= sizeof(FUSENT_DIR_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1) &&
+                Length >= (LONG) (sizeof(FILE_NAMES_INFORMATION) + sizeof(WCHAR) * (ModuleDirInformation->FileNameLength - 1))) {
+
+                WCHAR* FileName = ModuleDirInformation->FileName;
+                ULONG FileNameLength = ModuleDirInformation->FileNameLength;
+                ULONG NamesInformationLength = sizeof(FILE_NAMES_INFORMATION) + sizeof(WCHAR) * (FileNameLength - 1);
+
+                //
+                //  Align the names struct on an 8-byte (LONGLONG) boundary 
+                //
+
+                NamesInformationLength += sizeof(LONGLONG) - NamesInformationLength % sizeof(LONGLONG);
+
+                memcpy(NamesInfo->FileName, FileName, sizeof(WCHAR) * FileNameLength);
+                NamesInfo->FileNameLength = FileNameLength;
+                NamesInfo->FileIndex = str_hash_fn(FileName);
+                NamesInfo->NextEntryOffset = NamesInformationLength;
+
+                LastNamesInfo = NamesInfo;
+
+                Length -= NamesInformationLength;
+                ModuleDirInformationLength -= ModuleDirInformation->NextEntryOffset;
+                ModuleDirInformation = (FUSENT_DIR_INFORMATION*) (((PCHAR) ModuleDirInformation) + ModuleDirInformation->NextEntryOffset);
+                NamesInfo = (PFILE_NAMES_INFORMATION) (((PCHAR) NamesInfo) + NamesInformationLength);
+            }
+
+            if(LastNamesInfo) {
+                LastNamesInfo->NextEntryOffset = 0;
+            }
+        }
 
         break;
 
@@ -108,7 +245,7 @@ FuseCopyDirectoryControl (
 
 NTSTATUS
 FuseCopyInformation (
-    IN PIRP Irp
+    IN OUT PIRP Irp
     )
 {
     NTSTATUS Status = STATUS_SUCCESS;
@@ -304,7 +441,7 @@ FuseQueryNameInfo (
 
 NTSTATUS
 FuseCopyVolumeInformation (
-    IN PIRP Irp
+    IN OUT PIRP Irp
     )
 {
     NTSTATUS Status = STATUS_SUCCESS;
