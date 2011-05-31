@@ -1786,12 +1786,12 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, struct fuse_attr *st, WCHAR *basename)
 {
 	size_t buflen = sizeof(FUSENT_RESP) + sizeof(FUSENT_FILE_INFORMATION);
-    FUSENT_FILE_INFORMATION *fileinfo;
+	FUSENT_FILE_INFORMATION *fileinfo;
 	FUSENT_RESP *resp = malloc(buflen);
 
-    resp->params.query.buflen = sizeof(FUSENT_FILE_INFORMATION);
+	resp->params.query.buflen = sizeof(FUSENT_FILE_INFORMATION);
 
-    fileinfo = (FUSENT_FILE_INFORMATION*) (resp + 1);
+	fileinfo = (FUSENT_FILE_INFORMATION*) (resp + 1);
 
 	// Fill in the standard header bits:
 	fusent_fill_resp(resp, pirp, fop, 0);
