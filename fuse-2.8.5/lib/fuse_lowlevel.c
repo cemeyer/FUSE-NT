@@ -84,6 +84,9 @@ static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_inf
 	wcbasename[bnlen] = L'\0';
 
 	st_insert(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)wcbasename);
+
+	fprintf(stderr, "4\n");
+	fprintf(stderr, "Added fop mapping: %p -> %p, %u, `%s'\n", fop, fi, ino, basename);
 }
 
 // Lookup the corresponding file_info pointer for an open file handle (fop).
@@ -1636,6 +1639,7 @@ static void fusent_convert_win_path(char *buf, size_t *len) {
 // Returns negative if the parent can't be found or the path is invalid:
 //      stdint.h -> err
 static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino_t *in) {
+	fprintf(stderr, "get_parent_inode(`%s')\n", fn);
 	if (*fn != '/') return -1;
 	if (!req->f->op.lookup) return -1;
 	fn ++;
@@ -1646,6 +1650,8 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 	char *hijackbuf = malloc(buflen);
 
 	for (;;) {
+		fprintf(stderr, "inode, path => %d, `%s')\n", curino, fn);
+
 		// This is totally fine in UTF-8, by the way:
 		char *nextsl = strchr(fn, '/');
 
@@ -1699,7 +1705,7 @@ static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in, char **bn)
 	path[sl+2] = '\0';
 
 	char *bn_t;
-	int res = fusent_get_parent_inode(req, fn, &bn_t, in);
+	int res = fusent_get_parent_inode(req, path, &bn_t, in);
 	if (bn && res >= 0) {
 		*bn = fn + (bn_t - path);
 	}
@@ -1851,67 +1857,70 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
 	fuse_ino_t fino;
 
+	struct fuse_file_info *fi = NULL;
+
 	char *basename;
+	// This could be FUSENT_MAX_PATH + max(fuse_create, fuse_open), but I was lazy --cemeyer
 	char stbuf[sizeof(struct fuse_create_in) + 
 		sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
 	char *outbuf, *outbuf2;
 
-	if (fuse_flags & O_CREAT) {
+	if (fuse_flags & O_CREAT)
 		outbuf = stbuf + sizeof(struct fuse_create_in);
-		outbuf2 = outbuf;
+	else
+		outbuf = stbuf + sizeof(struct fuse_open_in);
 
-		// Convert and then reset the cd
-		iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
-		iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
-		size_t utf8len = outbuf - outbuf2;
+	outbuf2 = outbuf;
 
-		// Convert the path to a unix-like path
-		fusent_convert_win_path(outbuf2, &utf8len);
+	// Convert and then reset the cd
+	iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
+	iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
+	size_t utf8len = outbuf - outbuf2;
 
+	// Convert the path to a unix-like path
+	fusent_convert_win_path(outbuf2, &utf8len);
+
+	// A huge hack to make this work for helloworld.
+	// TODO(cemeyer) make this general purpose (for any directory):
+	if (!strncmp(outbuf2, "/", utf8len))
+		goto reply_create_nt;
+
+	if (fuse_flags & O_CREAT) {
+		// Look up inode for the parent directory of the file we want to create:
 		struct fuse_create_in *args = (struct fuse_create_in *)stbuf;
 		args->flags = fuse_flags;
 		args->umask = S_IXGRP | S_IXOTH;
 
-		// inode for create() should be inode of parent, apparently
 		fuse_ino_t par_inode;
 		if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
 			err = ENOENT;
+			fprintf(stderr, "1\n");
+			fprintf(stderr, "CREATE failed because parent does not exist: (%d)`%s' fnamep: (%d)`%S'\n", utf8len, outbuf2, fnamelen, fnamep);
 			goto reply_err_nt;
 		}
-		// Move basename into beginning of filename argument to creat()
-		// and null-terminate:
+
+		// creat() expects just the basename of the file:
 		memmove(outbuf2, basename, outbuf - basename);
 		outbuf2[outbuf - basename] = '\0';
 
-		// Invoke create!
 		llop = FUSE_CREATE;
 		llinode = par_inode;
 		llargs = (char *)args;
 	}
 	else {
-		outbuf = stbuf + sizeof(struct fuse_open_in);
-		outbuf2 = outbuf;
-
-		// Convert and then reset the cd
-		iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
-		iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
-		size_t utf8len = outbuf - outbuf2;
-
-		// Convert the path to a unix-like path
-		fusent_convert_win_path(outbuf2, &utf8len);
-
+		// Lookup inode for the file we are to open:
 		struct fuse_open_in *args = (struct fuse_open_in *)stbuf;
 		args->flags = fuse_flags;
-
-		// inode for open() needs to be looked up with lookup()
-		// lookup() takes parent inode and path.
-		// root inode is always FUSE_ROOT_ID
 
 		fuse_ino_t inode;
 		if (fusent_get_inode(req, outbuf2, &inode, &basename) < 0) {
 			err = ENOENT;
+			fprintf(stderr, "2\n");
+			fprintf(stderr, "OPEN failed because path does not exist: `%s'\n", outbuf2);
 			goto reply_err_nt;
 		}
+
+		fprintf(stderr, "OPEN: resolved `%s' -> %d\n", outbuf2, inode);
 
 		fino = inode;
 
@@ -1941,6 +1950,8 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 		// outh.error will be >= -1000 and <= 0:
 		err = -outh.error;
 		free(giantbuf);
+		fprintf(stderr, "3\n");
+		fprintf(stderr, "CREATE or OPEN failed (%s,%d): `%s'\n", strerror(-outh.error), -outh.error, outbuf2);
 		goto reply_err_nt;
 	}
 
@@ -1950,16 +1961,20 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 		fino = ((struct fuse_entry_out *)giantbuf)->nodeid;
 	}
 
-	struct fuse_file_info *fi = malloc(sizeof(struct fuse_file_info));
+	fi = malloc(sizeof(struct fuse_file_info));
 	fi->fh = openresp->fh;
 	fi->flags = openresp->open_flags;
 	free(giantbuf);
 
 	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename);
+
+reply_create_nt:
+	fprintf(stderr, "CREATE|OPEN: replying success!\n");
 	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 	return;
 
 reply_err_nt:
+	fprintf(stderr, "CREATE|OPEN: replying error(%d) `%s'\n", err, strerror(err));
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
@@ -2363,10 +2378,12 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 
 	switch (irptype) {
 		case IRP_MJ_CREATE:
+			fprintf(stderr, "fusent: got CREATE on %p\n", ntreq->fop);
 			fusent_do_create(ntreq, iosp, req);
 			break;
 
 		case IRP_MJ_READ:
+			fprintf(stderr, "fusent: got READ on %p\n", ntreq->fop);
 			fusent_do_read(ntreq, iosp, req);
 			break;
 
@@ -2375,14 +2392,17 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 			break;
 
 		case IRP_MJ_DIRECTORY_CONTROL:
+			fprintf(stderr, "fusent: got DIRECTORY_CONTROL on %p\n", ntreq->fop);
 			fusent_do_directory_control(ntreq, iosp, req);
 			break;
 
 		case IRP_MJ_CLEANUP:
+			fprintf(stderr, "fusent: got CLEANUP on %p\n", ntreq->fop);
 			fusent_do_cleanup(ntreq, iosp, req);
 			break;
 
 		case IRP_MJ_CLOSE:
+			fprintf(stderr, "fusent: got CLOSE on %p\n", ntreq->fop);
 			fusent_do_close(ntreq, iosp, req);
 			break;
 
@@ -2411,6 +2431,7 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 			break;
 
 		case IRP_MJ_QUERY_INFORMATION:
+			fprintf(stderr, "fusent: got QUERY_INFORMATION on %p\n", ntreq->fop);
 			fusent_do_query_information(ntreq, iosp, req);
 			break;
 

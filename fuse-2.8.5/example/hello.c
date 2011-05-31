@@ -22,6 +22,7 @@ static const char *hello_path = "/hello";
 static int hello_getattr(const char *path, struct stat *stbuf)
 {
 	int res = 0;
+	fprintf(stderr, "hello.c: hello_getattr `%s'\n", path);
 
 	memset(stbuf, 0, sizeof(struct stat));
 	if (strcmp(path, "/") == 0) {
@@ -42,6 +43,7 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 {
 	(void) offset;
 	(void) fi;
+	fprintf(stderr, "hello.c: hello_readdir `%s'\n", path);
 
 	if (strcmp(path, "/") != 0)
 		return -ENOENT;
@@ -55,8 +57,11 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int hello_open(const char *path, struct fuse_file_info *fi)
 {
-	if (strcmp(path, hello_path) != 0)
+	fprintf(stderr, "hello.c: hello_open `%s'\n", path);
+	if (strcmp(path, hello_path) != 0) {
+		fprintf(stderr, "hello.c: hello_open: (%d)`%s' != (%d)`%s'\n", strlen(path), path, strlen(hello_path), hello_path);
 		return -ENOENT;
+	}
 
 	if ((fi->flags & 3) != O_RDONLY)
 		return -EACCES;
@@ -69,6 +74,7 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 {
 	size_t len;
 	(void) fi;
+	fprintf(stderr, "hello.c: hello_read `%s'\n", path);
 	if(strcmp(path, hello_path) != 0)
 		return -ENOENT;
 
