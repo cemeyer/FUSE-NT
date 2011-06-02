@@ -109,24 +109,24 @@ Return Value:
     // do we need a separate function for each of these or can we have one
     // that just passes up the calls directly?
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]                   = (PDRIVER_DISPATCH)FuseFsdCreate;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = (PDRIVER_DISPATCH)FuseFsdClose;
-    DriverObject->MajorFunction[IRP_MJ_READ]                     = (PDRIVER_DISPATCH)FuseFsdRead;
-    DriverObject->MajorFunction[IRP_MJ_WRITE]                    = (PDRIVER_DISPATCH)FuseFsdWrite;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_INFORMATION]        = (PDRIVER_DISPATCH)FuseFsdQueryInformation;
-    DriverObject->MajorFunction[IRP_MJ_SET_INFORMATION]          = (PDRIVER_DISPATCH)FuseFsdSetInformation;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_EA]                 = (PDRIVER_DISPATCH)FuseFsdQueryInformation;
-    DriverObject->MajorFunction[IRP_MJ_SET_EA]                   = (PDRIVER_DISPATCH)FuseFsdSetEa;
-    DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = (PDRIVER_DISPATCH)FuseFsdFlushBuffers;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = (PDRIVER_DISPATCH)FuseFsdQueryVolumeInformation;
-    DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = (PDRIVER_DISPATCH)FuseFsdSetVolumeInformation;
-    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = (PDRIVER_DISPATCH)FuseFsdCleanup;
-    DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = (PDRIVER_DISPATCH)FuseFsdDirectoryControl;
-    DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = (PDRIVER_DISPATCH)FuseFsdFileSystemControl;
-    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = (PDRIVER_DISPATCH)FuseFsdLockControl;
-    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = (PDRIVER_DISPATCH)FuseFsdDeviceControl;
-    DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = (PDRIVER_DISPATCH)FuseFsdShutdown;
-    DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)FuseFsdPnp;
+    DriverObject->MajorFunction[IRP_MJ_CREATE]                   = FuseFsdCreate;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = FuseFsdClose;
+    DriverObject->MajorFunction[IRP_MJ_READ]                     = FuseFsdRead;
+    DriverObject->MajorFunction[IRP_MJ_WRITE]                    = FuseFsdWrite;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_INFORMATION]        = FuseFsdQueryInformation;
+    DriverObject->MajorFunction[IRP_MJ_SET_INFORMATION]          = FuseFsdSetInformation;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_EA]                 = FuseFsdQueryInformation;
+    DriverObject->MajorFunction[IRP_MJ_SET_EA]                   = FuseFsdSetEa;
+    DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = FuseFsdFlushBuffers;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = FuseFsdQueryVolumeInformation;
+    DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = FuseFsdSetVolumeInformation;
+    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = FuseFsdCleanup;
+    DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = FuseFsdDirectoryControl;
+    DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = FuseFsdFileSystemControl;
+    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = FuseFsdLockControl;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = FuseFsdDeviceControl;
+    DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = FuseFsdShutdown;
+    DriverObject->MajorFunction[IRP_MJ_PNP]                      = FuseFsdPnp;
 
     DriverObject->FastIoDispatch = &FuseFastIoDispatch;
 

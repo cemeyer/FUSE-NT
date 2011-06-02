@@ -30,6 +30,14 @@ Abstract:
 
 extern hashmap ModuleMap;
 extern hashmap UserspaceMap;
+
+//
+//  Uncomment FUSE_DEBUG0 to get detailed driver structure interaction output,
+//  and FUSE_DEBUG1 to get detailed information on which methods are being called
+//
+
+//#define FUSE_DEBUG0
+//#define FUSE_DEBUG1
 
 //
 //  The FSD Level dispatch routines.   These routines are called by the
@@ -62,6 +70,7 @@ __drv_dispatchType(IRP_MJ_SET_EA)
 DRIVER_DISPATCH FuseFsdSetEa;
 
 __drv_dispatchType(IRP_MJ_QUERY_INFORMATION)
+__drv_dispatchType(IRP_MJ_QUERY_EA)
 DRIVER_DISPATCH FuseFsdQueryInformation;
 
 __drv_dispatchType(IRP_MJ_SET_INFORMATION)
@@ -100,97 +109,25 @@ DRIVER_DISPATCH FuseFsdPnp;
 //  doing a fast query info call, or doing fast lock calls.
 //
 
-BOOLEAN
-FuseFastIoCheckIfPossible (
-    IN PFILE_OBJECT FileObject,
-    IN PLARGE_INTEGER FileOffset,
-    IN ULONG Length,
-    IN BOOLEAN Wait,
-    IN ULONG LockKey,
-    IN BOOLEAN CheckForReadOperation,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_CHECK_IF_POSSIBLE FuseFastIoCheckIfPossible;
 
-BOOLEAN
-FuseFastQueryBasicInfo (
-    IN PFILE_OBJECT FileObject,
-    IN BOOLEAN Wait,
-    IN OUT PFILE_BASIC_INFORMATION Buffer,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_QUERY_BASIC_INFO FuseFastQueryBasicInfo;
 
-BOOLEAN
-FuseFastQueryStdInfo (
-    IN PFILE_OBJECT FileObject,
-    IN BOOLEAN Wait,
-    IN OUT PFILE_STANDARD_INFORMATION Buffer,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_QUERY_STANDARD_INFO FuseFastQueryStdInfo;
 
-BOOLEAN
-FuseFastQueryNetworkOpenInfo (
-    IN PFILE_OBJECT FileObject,
-    IN BOOLEAN Wait,
-    IN OUT PFILE_NETWORK_OPEN_INFORMATION Buffer,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_QUERY_NETWORK_OPEN_INFO FuseFastQueryNetworkOpenInfo;
 
-BOOLEAN
-FuseFastLock (
-    IN PFILE_OBJECT FileObject,
-    IN PLARGE_INTEGER FileOffset,
-    IN PLARGE_INTEGER Length,
-    PEPROCESS ProcessId,
-    ULONG Key,
-    BOOLEAN FailImmediately,
-    BOOLEAN ExclusiveLock,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_LOCK FuseFastLock;
 
-BOOLEAN
-FuseFastUnlockSingle (
-    IN PFILE_OBJECT FileObject,
-    IN PLARGE_INTEGER FileOffset,
-    IN PLARGE_INTEGER Length,
-    PEPROCESS ProcessId,
-    ULONG Key,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_UNLOCK_SINGLE FuseFastUnlockSingle;
 
-BOOLEAN
-FuseFastUnlockAll (
-    IN PFILE_OBJECT FileObject,
-    PEPROCESS ProcessId,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_UNLOCK_ALL FuseFastUnlockAll;
 
-BOOLEAN
-FuseFastUnlockAllByKey (
-    IN PFILE_OBJECT FileObject,
-    PVOID ProcessId,
-    ULONG Key,
-    OUT PIO_STATUS_BLOCK IoStatus,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_UNLOCK_ALL_BY_KEY FuseFastUnlockAllByKey;
 
-NTSTATUS
-FuseAcquireForCcFlush (
-    IN PFILE_OBJECT FileObject,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_ACQUIRE_FOR_CCFLUSH FuseAcquireForCcFlush;
 
-NTSTATUS
-FuseReleaseForCcFlush (
-    IN PFILE_OBJECT FileObject,
-    IN PDEVICE_OBJECT DeviceObject
-    );
+FAST_IO_RELEASE_FOR_CCFLUSH FuseReleaseForCcFlush;
 
 //
 //  Utility functions
