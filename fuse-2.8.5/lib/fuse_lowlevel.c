@@ -297,7 +297,7 @@ static int send_reply_iov(fuse_req_t req, int error, struct iovec *iov,
 	int res;
 
 	res = fuse_send_reply_iov_nofree(req, error, iov, count);
-	fuse_free_req(req);
+	// fuse_free_req(req);
 	return res;
 }
 
@@ -2250,11 +2250,12 @@ static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 
 	struct fuse_out_header outh;
 	struct fuse_attr_out attr;
+    struct fuse_getattr_in args = {0, 0, 0};
 	req->response_hijack = &outh;
 	req->response_hijack_buf = &attr;
 	req->response_hijack_buflen = sizeof(struct fuse_attr_out);
 
-	fuse_ll_ops[FUSE_GETATTR].func(req, inode, NULL);
+	fuse_ll_ops[FUSE_GETATTR].func(req, inode, &args);
 
 	req->response_hijack = NULL;
 	req->response_hijack_buf = NULL;
