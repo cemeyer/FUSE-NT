@@ -214,33 +214,6 @@ FuseQueryFsFullSizeInfo (
     IN OUT PLONG Length
     );
 
-PVOID
-FuseMapUserBuffer (
-    IN OUT PIRP Irp
-    );
-
-//
-//  Module name extraction
-//
-
-LPWSTR
-FuseExtractModuleName (
-    IN PIRP Irp,
-    OUT PULONG Length
-    );
-
-LPWSTR
-FuseAllocateModuleName (
-    IN PIRP Irp
-    );
-
-VOID
-FuseCopyModuleName (
-    IN PIRP Irp,
-    OUT WCHAR* Destination,
-    OUT PULONG Length
-    );
-
 #endif // _FUSEPROCS_
 
 

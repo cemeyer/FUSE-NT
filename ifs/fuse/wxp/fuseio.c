@@ -17,6 +17,7 @@ Abstract:
 #include "fuseprocs.h"
 #include "fusent_proto.h"
 #include "hashmap.h"
+#include "fuseutil.h"
 
 NTSTATUS
 FuseAddUserspaceIrp (
@@ -102,6 +103,7 @@ FuseAddUserspaceIrp (
 
             FuseAddIrpToModuleList(Irp, ModuleStruct, FALSE);
 
+            FusePrePostIrp(Irp);
             IoMarkIrpPending(Irp);
             Status = STATUS_PENDING;
 
@@ -705,6 +707,7 @@ FuseFsdFileSystemControl (
                     //  We only need to mark the IRP as pending if it there was no work for it
                     //
 
+                    FusePrePostIrp(Irp);
                     IoMarkIrpPending(Irp);
                     Status = STATUS_PENDING;
                 }
@@ -1124,93 +1127,5 @@ FuseReleaseForCcFlush (
 {
     DbgPrint("FuseReleaseForCcFlush\n");
     return STATUS_SUCCESS;
-}
-
-LPWSTR
-FuseExtractModuleName (
-    IN PIRP Irp,
-    OUT PULONG Length
-    )
-{
-    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    WCHAR* FileName = IrpSp->FileObject->FileName.Buffer;
-    WCHAR* ModuleName = FileName;
-    WCHAR* BackslashPosition;
-    ULONG FileNameLength = IrpSp->FileObject->FileName.Length;
-
-    *Length = FileNameLength;
-
-    if(FileNameLength > 0) {
-        if(FileName[0] == L'\\') {
-            ModuleName ++;
-            *Length = FileNameLength - 1;
-        }
-
-        BackslashPosition = wcsstr(ModuleName, L"\\");
-
-        if(BackslashPosition) {
-            *Length = BackslashPosition - ModuleName;
-        }
-    }
-
-    return ModuleName;
-}
-
-LPWSTR
-FuseAllocateModuleName (
-    IN PIRP Irp
-    )
-{
-    WCHAR* ModuleName;
-    WCHAR* ModuleNamePointer;
-    ULONG ModuleNameLength;
-
-    ModuleNamePointer = FuseExtractModuleName(Irp, &ModuleNameLength);
-    ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1), 'esuF');
-
-    memcpy(ModuleName, ModuleNamePointer, sizeof(WCHAR) * ModuleNameLength);
-    ModuleName[ModuleNameLength] = L'\0';
-
-    return ModuleName;
-}
-
-VOID
-FuseCopyModuleName (
-    IN PIRP Irp,
-    OUT LPWSTR Destination,
-    OUT PULONG Length
-    )
-{
-    WCHAR* ModuleName = FuseExtractModuleName(Irp, Length);
-
-    memcpy(Destination, ModuleName, sizeof(WCHAR) * (*Length));
-    Destination[*Length] = L'\0';
-}
-
-PVOID
-FuseMapUserBuffer (
-    IN OUT PIRP Irp
-    )
-{
-    //
-    // If there is no Mdl, then we must be in the Fsd, and we can simply
-    // return the UserBuffer field from the Irp.
-    //
-
-    if (Irp->MdlAddress == NULL) {
-
-        return Irp->UserBuffer;
-    
-    } else {
-
-        PVOID Address = MmGetSystemAddressForMdlSafe( Irp->MdlAddress, NormalPagePriority );
-
-        if (Address == NULL) {
-
-            ExRaiseStatus( STATUS_INSUFFICIENT_RESOURCES );
-        }
-
-        return Address;
-    }
 }
 

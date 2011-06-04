@@ -106,9 +106,6 @@ Return Value:
     // Initialize the driver object with this driver's entry points.
     //
 
-    // do we need a separate function for each of these or can we have one
-    // that just passes up the calls directly?
-
     DriverObject->MajorFunction[IRP_MJ_CREATE]                   = FuseFsdCreate;
     DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = FuseFsdClose;
     DriverObject->MajorFunction[IRP_MJ_READ]                     = FuseFsdRead;

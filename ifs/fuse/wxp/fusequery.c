@@ -3,6 +3,7 @@
 #include "fuseprocs.h"
 #include "hashmap.h"
 #include "fusent_proto.h"
+#include "fuseutil.h"
 
 BOOLEAN FuseOdd = FALSE;
 
