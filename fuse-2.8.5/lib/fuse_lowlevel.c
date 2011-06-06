@@ -2098,27 +2098,117 @@ reply_err_nt:
 // Handle an IRP_MJ_DIRECTORY_CONTROL request
 static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
+//
+// Right now, this should call opendir, then readdir, then print out the name of the first dirent
+// it receives. It's close, but right now it doesn't work for some reason.
+// -Rob
+//
+
+	PFILE_OBJECT fop = ntreq->fop;
+	int err;
+	
+	printf("%s\n", "hello from fusent_do_directory_control");
+	
 	// For more info on these params, see the MSDN on IRP_MJ_DIRECTORY_CONTROL:
 	// http://msdn.microsoft.com/en-us/library/ff548658(v=vs.85).aspx
 	EXTENDED_IO_STACK_LOCATION *irpsp = (EXTENDED_IO_STACK_LOCATION *)iosp;
 	UCHAR flags = irpsp->Flags;
-
-	int err;
-
 	if (irpsp->MinorFunction != IRP_MN_QUERY_DIRECTORY) {
 		err = ENOSYS;
 		goto reply_err_nt;
 	}
+	
+	printf("%s\n", "fusent_do_directory_control -- 1");
+	
+	struct fuse_file_info *fi;
+	struct fuse_file_info fi2;
+	fuse_ino_t inode;
+	WCHAR* bn = NULL;
+	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
+		err = EBADF;
+		
+		printf("%s\n", "fusent_do_directory_control -- fop lookup failed.");
+		printf("fail basename: '%s'\n", bn); 
+		goto reply_err_nt;
+	}
+	
+	struct fuse_open_in openargs;
+	memset(&openargs, 0, sizeof(openargs));
+	openargs.flags = O_CREAT | O_RDONLY;
+	
+		//
+	// For now, we return all info regardless of which FIC is requested, and
+	// leave it to the kernel driver to sort out which fields it really needs.
+	//
+	/* FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass; */
+	
+	// UNICODE_STRING *fn = irpsp->Parameters.QueryDirectory.FileName;
+	ULONG len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
+	struct fuse_out_header outh;
+	char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
+	memset(giantbuf, 0, sizeof(giantbuf));
+	req->response_hijack = &outh;
+	req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
+	req->response_hijack_buflen = len;
+	
+	printf("%s\n", "fusent_do_directory_control -- 1.5");
+	
+	// req gets wiped out by this call, so copy it
+	//fuse_req_t req2 = (fuse_req_t)malloc(sizeof(struct fuse_req));
+	//struct fuse_ll *f2 = (struct fuse_ll*)malloc(sizeof(struct fuse_ll));
+	
+	//*req2 = *req;
+	//*f2 = *(req->f);
+	
+	//req2->f = f2;
+	
+	fuse_ll_ops[FUSE_OPENDIR].func(req, inode, &openargs);
+	
+	printf("%s\n", "fusent_do_directory_control -- 1.6");
+	
+	struct fuse_open_out *outargs = (struct fuse_open_out *)req->response_hijack_buf;
+	
+	// retrieve the file handle!!
+	memset(&fi2, 0, sizeof(fi2));
+	fi2.fh = outargs->fh;
+	fi2.flags = outargs->open_flags;
+	
+	printf("%s\n", "fusent_do_directory_control -- 2");
+	printf("good basename: '%s'\n", bn); 
 
-	ULONG len = irpsp->Parameters.QueryDirectory.Length;
-	FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
-	UNICODE_STRING *fn = irpsp->Parameters.QueryDirectory.FileName;
-
-	// TODO(cemeyer) when we want directory listings to work
+	printf("%s\n", "fusent_do_directory_control -- 3");
+	
+	// create a readargs struct and fill it out appropriately
+	struct fuse_read_in readargs;
+	readargs.fh = fi2.fh;
+	readargs.flags = fi2.flags;
+	readargs.lock_owner = fi2.lock_owner;
+	readargs.size = len;
+	readargs.offset = 0;//(uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+	
+	printf("%s\n", "fusent_do_directory_control -- 4");
+	memset(giantbuf, 0, sizeof(giantbuf));
+	fuse_ll_ops[FUSE_READDIR].func(req, inode, &readargs);
+	
+	printf("%s\n", "fusent_do_directory_control -- 5");
+	
+	// now what?
+	// lets just go ahead and let it return like this,
+	// I dont care - right now I just want to see the contents of the buffer.
+	
+	printf("%s\n", "fusent_do_directory_control -- 6");
+	
+	struct fuse_dirent * dir = req->response_hijack_buf;
+	
+	printf("dir->d_name: %s\n", dir->name);
+	
 	err = ENOSYS;
 	goto reply_err_nt;
 
 reply_err_nt:
+	
+	printf("%s\n", "fusent_do_directory_control -- 7");
+
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
