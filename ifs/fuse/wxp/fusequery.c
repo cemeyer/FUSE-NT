@@ -309,13 +309,10 @@ FuseCopyInformation (
 
     //
     //  Set the information field to the number of bytes actually filled in
-    //  and then complete the request
     //
 
     Irp->IoStatus.Information = IrpSp->Parameters.QueryFile.Length - Length;
     Irp->IoStatus.Status = Status;
-
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
     
     return Status;
 }
