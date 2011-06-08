@@ -94,16 +94,16 @@ typedef struct _FUSENT_MOUNT { // weird special-case "response"
 } FUSENT_MOUNT;
 
 typedef struct _FUSENT_FILE_INFORMATION {
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    ULONG FileAttributes;
-    LARGE_INTEGER AllocationSize;
-    LARGE_INTEGER EndOfFile;
-    ULONG NumberOfLinks;
-    BOOLEAN DeletePending;
-    BOOLEAN Directory;
+	LARGE_INTEGER CreationTime;
+	LARGE_INTEGER LastAccessTime;
+	LARGE_INTEGER LastWriteTime;
+	LARGE_INTEGER ChangeTime;
+	ULONG FileAttributes;
+	LARGE_INTEGER AllocationSize;
+	LARGE_INTEGER EndOfFile;
+	ULONG NumberOfLinks;
+	BOOLEAN DeletePending;
+	BOOLEAN Directory;
 } FUSENT_FILE_INFORMATION;
 
 typedef struct _FUSENT_RESP {
@@ -121,7 +121,7 @@ typedef struct _FUSENT_RESP {
 			uint32_t written;
 		} write;
 		struct {
-            uint32_t buflen;
+			uint32_t buflen;
 			// defined as following the FUSENT_RESP header
 		} query;
 		struct {

@@ -58,6 +58,12 @@ static st_table *fusent_fop_basename_map;
 static st_table *fusent_fop_pos_map;
 // Map to open file sync flag:
 static st_table *fusent_fop_sync_map;
+// Map to open directory listings; ghetto, but, whatever:
+typedef struct {
+	int64_t off, len;
+	char *listing;
+} FUSENT_DIRLISTING;
+static st_table *fusent_fop_dirlisting_map;
 
 void fusent_translate_setup()
 {
@@ -67,11 +73,13 @@ void fusent_translate_setup()
 	fusent_fop_basename_map = st_init_numtable();
 	fusent_fop_pos_map = st_init_numtable();
 	fusent_fop_sync_map = st_init_numtable();
+	fusent_fop_dirlisting_map = st_init_numtable();
 }
 
 // Destroys any persistant data structures at shut down.
 void fusent_translate_teardown()
 {
+	st_free_table(fusent_fop_dirlisting_map);
 	st_free_table(fusent_fop_sync_map);
 	st_free_table(fusent_fop_pos_map);
 	st_free_table(fusent_fop_basename_map);
@@ -400,6 +408,14 @@ int fuse_reply_iov(fuse_req_t req, const struct iovec *iov, int count)
 size_t fuse_dirent_size(size_t namelen)
 {
 	return FUSE_DIRENT_ALIGN(FUSE_NAME_OFFSET + namelen);
+}
+
+size_t fusent_fdient_size(size_t namelenbytes)
+{
+	// Turns out FUSE_DIRENT_ALIGN aligns along 8-byte boundaries too; this
+	// is all Windows requires for packed FILE_DIRECTORY_INFORMATION structs.
+	return FUSE_DIRENT_ALIGN(sizeof(FILE_DIRECTORY_INFORMATION) +
+			namelenbytes - sizeof(WCHAR));
 }
 
 char *fuse_add_dirent(char *buf, const char *name, const struct stat *stbuf,
@@ -1052,9 +1068,6 @@ static void do_opendir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		fuse_reply_open(req, &fi);
 }
 
-//
-// debug hack
-//
 static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 {
 	struct fuse_read_in *arg = (struct fuse_read_in *) inarg;
@@ -1064,23 +1077,10 @@ static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	fi.fh = arg->fh;
 	fi.fh_old = fi.fh;
 
-	if (req->f->op.readdir) {
-		printf("do_readdir dispatching to op.readdir()\n");
-		printf("req:%p\n", req);
-		printf("req->f:%p\n", req->f);
-		//printf("req->f->op:%.8x\n", req->f->op);
-		printf("req->f->op.readdir:%p\n", req->f->op.readdir);
-		//printf("addr of fuse_lib_readdir():%.8x\n", fuse_lib_readdir);
-		printf("arg: %p\n", arg);
-		printf("arg->size: %.8x\n", arg->size);
-		printf("arg->offset: %.16llx\n", arg->offset);
-		printf("nodeid:%.8lx, fi:%p\n", nodeid, &fi);
+	if (req->f->op.readdir)
 		req->f->op.readdir(req, nodeid, arg->size, arg->offset, &fi);
-	}
-	else {
-		printf("do_readdir calling fuse_reply_err()\n");
+	else
 		fuse_reply_err(req, ENOSYS);
-	}
 }
 
 static void do_releasedir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
@@ -2212,6 +2212,187 @@ reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
+// Takes the given directory, opendirs it, readdirs it, and compiles a windows directory listing buffer
+// and throws that into the fusent_fop_dir_map hash table.
+//
+// Returns zero on success, error number on failure (positive).
+static int fusent_do_buffer_dirlisting(FUSENT_REQ *ntreq, EXTENDED_IO_STACK_LOCATION *irpsp, fuse_req_t req, fuse_ino_t inode)
+{
+	PFILE_OBJECT fop = ntreq->fop;
+	int err;
+
+	struct fuse_open_in openargs;
+	memset(&openargs, 0, sizeof(openargs));
+	openargs.flags = O_RDONLY;
+	
+	// For now, we ignore FILE_INFORMATION_CLASS and just return some set of fields
+	// to the kernel, which sorts out which fields each request needs.
+	// FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
+	
+	uint32_t len = 8192; // Arbitrary length --cemeyer
+	uint32_t fusebuflen = 8192;
+
+	struct fuse_out_header outh;
+	char *giantbuf = malloc(fusebuflen);
+	req->response_hijack = &outh;
+	req->response_hijack_buf = giantbuf;
+	req->response_hijack_buflen = fusebuflen;
+
+	fuse_ll_ops[FUSE_OPENDIR].func(req, inode, &openargs);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		err = -outh.error;
+		free(giantbuf);
+		fprintf(stderr, "OPENDIR failed (%s, %d)\n", strerror(err), err);
+		return err;
+	}
+	
+	struct fuse_open_out *outargs = (struct fuse_open_out *)giantbuf;
+	
+	struct fuse_file_info fi2;
+	memset(&fi2, 0, sizeof(fi2));
+	fi2.fh = outargs->fh;
+	fi2.flags = outargs->open_flags;
+	
+	fprintf(stderr, "OPENDIR succeeded!\n");
+	
+	struct fuse_read_in readargs;
+	readargs.fh = fi2.fh;
+	readargs.flags = fi2.flags;
+	readargs.lock_owner = fi2.lock_owner;
+	readargs.size = fusebuflen;
+	readargs.offset = 0; // TODO: care about this
+	
+	req->response_hijack = &outh;
+	req->response_hijack_buf = giantbuf;
+	req->response_hijack_buflen = fusebuflen;
+
+	fuse_ll_ops[FUSE_READDIR].func(req, inode, &readargs);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		err = -outh.error;
+		free(giantbuf);
+		fprintf(stderr, "READDIR failed (%s, %d)\n", strerror(err), err);
+		// TODO releasedir
+		return err;
+	}
+	
+	char *p = giantbuf;
+	size_t nbytes = outh.len - sizeof(struct fuse_out_header);
+
+	char *outbuf = malloc(len);
+	char *o = outbuf;
+	size_t nbytesout = len;
+
+	// Hack (stolen from kernel/fuse_i.h):
+#define FUSE_NAME_MAX 1024
+
+	// Ripped more or less directly from the Linux kernel fuse fs function parse_dirfile in dir.c:
+	// Well, modified quite a bit now --cemeyer
+	WCHAR *fnbuf = malloc((FUSE_NAME_MAX+1) * sizeof(WCHAR));
+	FILE_DIRECTORY_INFORMATION *lastfdi = NULL;
+	while (nbytes >= FUSE_NAME_OFFSET && nbytesout >= sizeof(FILE_DIRECTORY_INFORMATION)) {
+		struct fuse_dirent *dirent = (struct fuse_dirent *)p;
+		size_t reclen = fuse_dirent_size(dirent->namelen);
+
+		// The fuse module gave us bad input; well, fuck...
+		if (!dirent->namelen || dirent->namelen > FUSE_NAME_MAX) {
+			err = EIO;
+			free(fnbuf);
+			free(outbuf);
+			free(giantbuf);
+			return err;
+		}
+		if (reclen > nbytes) break;
+
+		FILE_DIRECTORY_INFORMATION *fdient = (FILE_DIRECTORY_INFORMATION *)o;
+		size_t utf16lenbytes = fusent_transcode(dirent->name, dirent->namelen, fnbuf, FUSE_NAME_MAX*sizeof(WCHAR), "UTF-8", "UTF-16LE");
+		fnbuf[utf16lenbytes / (sizeof(WCHAR))] = (WCHAR)0;
+
+		size_t fdilen = fusent_fdient_size(utf16lenbytes);
+		if (fdilen > nbytesout) break;
+
+		fprintf(stderr, "dirctrl: dirent->name: %.*s\treclen:0x%.8x\n", (int)dirent->namelen, dirent->name, reclen);
+
+		struct fuse_attr_out attr;
+		struct fuse_out_header outh2;
+		struct fuse_getattr_in args = { 0, 0, 0 };
+
+		req->response_hijack = &outh2;
+		req->response_hijack_buf = (char *)&attr;
+		req->response_hijack_buflen = sizeof(struct fuse_attr_out);
+
+		fuse_ll_ops[FUSE_GETATTR].func(req, dirent->ino, &args);
+
+		req->response_hijack = NULL;
+		req->response_hijack_buf = NULL;
+
+		if (outh2.error) {
+			err = -outh2.error;
+			free(giantbuf);
+			free(fnbuf);
+			free(outbuf);
+			fprintf(stderr, "GETATTR failed mid-DIR_CONTROL (%s, %d)\n", strerror(err), err);
+			return err;
+		}
+
+		struct fuse_attr *st = &attr.attr;
+
+		fdient->NextEntryOffset = fdilen;
+		fdient->FileIndex = 0; // we pick an arbitrary value; this is undefined on all but FAT anyways.
+
+		// Most of this is stolen from fusent_reply_query
+		fusent_unixtime_to_wintime(0, &fileinfo->CreationTime);
+		fusent_unixtime_to_wintime(st->atime, &fdient->LastAccessTime);
+		fusent_unixtime_to_wintime(st->mtime, &fdient->LastWriteTime);
+
+		// Take the most recent of {mtime,ctime} for windows' "changetime"
+		time_t ctime = (st->mtime > st->ctime)? st->mtime : st->ctime;
+		fusent_unixtime_to_wintime(ctime, &fdient->ChangeTime);
+
+		fdient->AllocationSize.QuadPart = ((int64_t)st->blocks) * 512;
+		fdient->EndOfFile.QuadPart = (int64_t)st->size;
+		fusent_unixmode_to_winattr(st->mode, &fdient->FileAttributes);
+		fdient->FileNameLength = utf16lenbytes;
+		memcpy(fdient->FileName, fnbuf, utf16lenbytes);
+
+		lastfdi = fdient;
+
+		p += reclen;
+		o += fdilen;
+		nbytes -= reclen;
+		nbytesout -= fdilen;
+		//fusent_set_file_offset(fop, fusent_get_file_offset(fop) + nbytes);
+	}
+	free(fnbuf);
+	free(giantbuf);
+
+	FUSENT_DIRLISTING *dl = malloc(sizeof(FUSENT_DIRLISTING));
+	dl->off = 0;
+	dl->len = 0;
+	dl->listing = NULL;
+	if (lastfdi) {
+		lastfdi->NextEntryOffset = 0;
+		dl->len += ((char *)lastfdi->FileName) + lastfdi->FileNameLength - outbuf;
+		dl->listing = outbuf
+	}
+	else {
+		free(outbuf);
+	}
+
+	st_insert(fusent_fop_dirlisting_map, (st_data_t)fop, (st_data_t)dl);
+
+	// TODO release dir
+
+	return 0;
+}
+
 // Handle an IRP_MJ_DIRECTORY_CONTROL request
 static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
@@ -2235,108 +2416,92 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		err = EBADF;
 		goto reply_err_nt;
 	}
-	
-	struct fuse_open_in openargs;
-	memset(&openargs, 0, sizeof(openargs));
-	openargs.flags = O_RDONLY;
-	
-	// For now, we ignore FILE_INFORMATION_CLASS and just return some set of fields
-	// to the kernel, which sorts out which fields each request needs.
-	// FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
-	
-	uint32_t len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
-	fprintf(stderr, "dirctrl: Got buflen %u, we're using: %u\n", (unsigned)irpsp->Parameters.QueryDirectory.Length, (unsigned)len);
 
-	struct fuse_out_header outh;
-	char *giantbuf = malloc(len);
-	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf;
-	req->response_hijack_buflen = len;
-
-	fuse_ll_ops[FUSE_OPENDIR].func(req, inode, &openargs);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		err = -outh.error;
-		free(giantbuf);
-		fprintf(stderr, "OPENDIR failed (%s, %d)\n", strerror(err), err);
-		goto reply_err_nt;
+	// Check if the dir listing asks for a restart, or if not, if we don't
+	// already have a buffer sitting somewhere:
+	int restart = 0;
+	if (!st_is_member(fusent_fop_dirlisting_map, (st_data_t)fop)) {
+		restart = 1;
 	}
-	
-	struct fuse_open_out *outargs = (struct fuse_open_out *)giantbuf;
-	
-	struct fuse_file_info fi2;
-	memset(&fi2, 0, sizeof(fi2));
-	fi2.fh = outargs->fh;
-	fi2.flags = outargs->open_flags;
-	
-	fprintf(stderr, "OPENDIR succeeded!\n");
-	fflush(stderr);
-	char fn[256];
-	size_t fnlen = fusent_transcode(bn, wcslen(bn), fn, 255, "UTF-16LE", "UTF-8");
-	fn[min(fnlen, 255)] = '\0';
-	fprintf(stderr, "basename: `%s'\n", fn);
-	fflush(stderr);
-	
-	struct fuse_read_in readargs;
-	readargs.fh = fi2.fh;
-	readargs.flags = fi2.flags;
-	readargs.lock_owner = fi2.lock_owner;
-	readargs.size = len;
-	readargs.offset = 0; // TODO: care about this
-	
-	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf;
-	req->response_hijack_buflen = len;
+	else if (irpsp->Flags & SL_RESTART_SCAN) {
+		restart = 1;
 
-	fuse_ll_ops[FUSE_READDIR].func(req, inode, &readargs);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		err = -outh.error;
-		free(giantbuf);
-		fprintf(stderr, "READDIR failed (%s, %d)\n", strerror(err), err);
-		goto reply_err_nt;
+		// Nuke the dirlisting buffer from the map:
+		st_data_t irfop = (st_data_t)fop,
+			  rdl;
+		st_lookup(fusent_fop_dirlisting_map, irfop, &rdl);
+		FUSENT_DIRLISTING *dl = (FUSENT_DIRLISTING *)rdl;
+		if (dl->listing) free(dl->listing);
+		irfop = fop;
+		st_delete(fusent_fop_dirlisting_map, &irfop, NULL);
 	}
-	
-	char *p = giantbuf;
-	size_t nbytes = outh.len - sizeof(struct fuse_out_header);
 
-	// Hack (stolen from kernel/fuse_i.h):
-#define FUSE_NAME_MAX 1024
-
-	// Ripped more or less directly from the Linux kernel fuse fs function parse_dirfile in dir.c:
-
-	while (nbytes >= FUSE_NAME_OFFSET) {
-		struct fuse_dirent *dirent = (struct fuse_dirent *)p;
-		size_t reclen = fuse_dirent_size(dirent->namelen);
-
-		if (!dirent->namelen || dirent->namelen > FUSE_NAME_MAX) {
-			err = EIO;
-			goto reply_err_nt;
-		}
-		if (reclen > nbytes) break;
-
-		fprintf(stderr, "current->name: %.*s\treclen:0x%.8x\n", (int)dirent->namelen, dirent->name, reclen);
-
-		// TODO: do shit with this dirent
-
-		p += reclen;
-		nbytes -= reclen;
-		fusent_set_file_offset(fop, fusent_get_file_offset(fop) + nbytes);
+	if (restart) {
+		err = fusent_do_buffer_dirlisting(ntreq, irpsp, req, inode);
+		if (err) goto reply_err_nt;
 	}
+
+	st_data_t rdl;
+	st_lookup(fusent_fop_dirlisting_map, (st_data_t)fop, &rdl);
+	FUSENT_DIRLISTING *dl = (FUSENT_DIRLISTING *)rdl;
+
+	// If we've already traversed the entire directory:
+	if (dl->off >= dl->len) {
+		FUSENT_RESP resp;
+		fusent_fill_resp(&resp, pirp, fop, 0);
+		resp->status = STATUS_NO_MORE_FILES;
+		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
+		return;
+	}
+
+	// Otherwise, copy as many as will fit into the waiting buf,
+	// and update offset:
+	size_t bytesleft = irpsp->Parameters.QueryDirectory.Length;
+	char *outbuf = malloc(sizeof(FUSENT_RESP) + bytesleft);
+	char *o = outbuf + sizeof(FUSENT_RESP);
+	char *p = dl->listing + dl->off;
+
+	FILE_DIRECTORY_INFORMATION *lastfdi = NULL;
+	while (bytesleft >= sizeof(FILE_DIRECTORY_INFORMATION) && p < dl->listing + dl->len) {
+		FILE_DIRECTORY_INFORMATION *fdient = (FILE_DIRECTORY_INFORMATION *)p;
+		size_t fdilen = fusent_fdient_size(fdient->FileNameLength);
+
+		if (bytesleft < fdilen) break;
+
+		memcpy(o, p, fdilen);
+		lastfdi = (FILE_DIRECTORY_INFORMATION *)o;
+		o += fdilen;
+		p += fdilen;
+		bytesleft -= fdilen;
+
+		if (!fdient->NextEntryOffset) break;
+		if (irpsp->Flags & SL_RETURN_SINGLE_ENTRY) break;
+	}
+
+	// Buffer was too small to fit any entries:
+	// We are supposed to shove part of it in? I'm not sure
+	// how this should work; whatever:
+	if (!lastfdi) {
+		FUSENT_RESP resp;
+		fusent_fill_resp(&resp, pirp, fop, 0);
+		resp->status = STATUS_BUFFER_OVERFLOW;
+		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
+		free(outbuf);
+		return;
+	}
+
+	// Last entry points to zero
+	lastfdi->NextEntryOffset = 0;
 	
-	err = ENOENT;
-	//goto reply_err_nt; // fall through
+	// Update directory "progress"
+	dl->off = p - dl->listing;
+
+	// Reply with a big fat buf!
+	fusent_reply_read(req, pirp, fop, o - outbuf, outbuf);
+	free(outbuf);
+	return;
 
 reply_err_nt:
-	
-	printf("%s\n", "fusent_do_directory_control -- 6");
-
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
