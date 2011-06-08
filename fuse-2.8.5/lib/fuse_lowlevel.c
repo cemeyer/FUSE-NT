@@ -2275,15 +2275,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	
 	printf("%s\n", "fusent_do_directory_control -- 1.5");
 	
-	// req gets wiped out by this call, so copy it
-	//fuse_req_t req2 = (fuse_req_t)malloc(sizeof(struct fuse_req));
-	//struct fuse_ll *f2 = (struct fuse_ll*)malloc(sizeof(struct fuse_ll));
-	
-	//*req2 = *req;
-	//*f2 = *(req->f);
-	
-	//req2->f = f2;
-	
+
 	fuse_ll_ops[FUSE_OPENDIR].func(req, inode, &openargs);
 	
 	printf("%s\n", "fusent_do_directory_control -- 1.6");
@@ -2314,22 +2306,21 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	
 	printf("%s\n", "fusent_do_directory_control -- 5");
 	
-	// now what?
-	// lets just go ahead and let it return like this,
-	// I dont care - right now I just want to see the contents of the buffer.
-	
-	printf("%s\n", "fusent_do_directory_control -- 6");
-	
-	struct fuse_dirent * dir = req->response_hijack_buf;
-	
-	printf("dir->d_name: %s\n", dir->name);
+	char *p = req->response_hijack_buf;
+	while (p < req->response_hijack_buf + len) {
+		struct fuse_dirent *current = p;
+		size_t entsize = FUSE_DIRENT_ALIGN(FUSE_NAME_OFFSET + current->namelen);
+		p += entsize;
+		
+		printf("current->name: %s\tentsize:0x%.8x\n", current->name, entsize);
+	}
 	
 	err = ENOSYS;
 	goto reply_err_nt;
 
 reply_err_nt:
 	
-	printf("%s\n", "fusent_do_directory_control -- 7");
+	printf("%s\n", "fusent_do_directory_control -- 6");
 
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
