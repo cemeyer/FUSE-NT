@@ -61,16 +61,16 @@ void fusent_translate_setup()
 	fusent_fop_fi_map = st_init_numtable();
 	fusent_fop_ino_map = st_init_numtable();
 	fusent_fop_basename_map = st_init_numtable();
-    fusent_fop_pos_map = st_init_numtable();
+	fusent_fop_pos_map = st_init_numtable();
 }
 
 // Destroys any persistant data structures at shut down.
 void fusent_translate_teardown()
 {
+	st_free_table(fusent_fop_pos_map);
 	st_free_table(fusent_fop_basename_map);
 	st_free_table(fusent_fop_ino_map);
 	st_free_table(fusent_fop_fi_map);
-    st_free_table(fusent_fop_pos_map);
 	iconv_close(cd_utf16le_to_utf8);
 }
 
@@ -80,12 +80,25 @@ static inline size_t max_sz(size_t a, size_t b)
 	return a;
 }
 
+// Given a LARGE_INTEGER offset from an IO_STACK_LOCATION and the current file position,
+// figure out where a read or write should be performed:
+static inline uint64_t fusent_readwrite_offset(uint64_t curoff, LARGE_INTEGER off)
+{
+	// This is how I interpret http://msdn.microsoft.com/en-us/library/ff549327.aspx --cemeyer:
+	if ((off.LowPart == FILE_USE_FILE_POINTER_POSITION && off.HighPart == -1) ||
+			!off.QuadPart)
+		return current_offset;
+	if (off.QuadPart < 0)
+		fprintf(stderr, "Err: Got negative offset? %d\n", off.QuadPart);
+	return (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+}
+
 // Add the fh <-> fop mapping to our maps:
 static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino, char *basename)
 {
 	st_insert(fusent_fop_fi_map, (st_data_t)fop, (st_data_t)fi);
 	st_insert(fusent_fop_ino_map, (st_data_t)fop, (st_data_t)ino);
-    st_insert(fusent_fop_pos_map, (st_data_t)fop, (st_data_t)calloc(1, sizeof(uint64_t)));
+	st_insert(fusent_fop_pos_map, (st_data_t)fop, (st_data_t)calloc(1, sizeof(uint64_t)));
 
 	// Transcode the basename into native Windows WCHARs:
 	size_t bnlen = strlen(basename);
@@ -138,8 +151,11 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 	irfop = (st_data_t)fop;
 	st_delete(fusent_fop_basename_map, &irfop, NULL);
 
-    irfop = (st_data_t)fop;
-	st_delete(fusent_fop_pos_map, &irfop, NULL);
+	irfop = (st_data_t)fop;
+	st_data_t pos;
+	if (st_delete(fusent_fop_pos_map, &irfop, &pos)) {
+		if (pos) free(pos);
+	}
 }
 
 // Translates a unix mode_t to windows' FileAttributes ULONG
@@ -1646,26 +1662,24 @@ static void fusent_convert_win_path(char *buf, size_t *len) {
 // Get the current read/write offset for the given file object
 static uint64_t fusent_get_file_offset(PFILE_OBJECT fop)
 {
-    int res;
 	st_data_t poffset;
 
-	res = st_lookup(fusent_fop_pos_map, (st_data_t)fop, &poffset) - 1;
-	if (!res)
-        return *((uint64_t *) poffset);
+	if (st_lookup(fusent_fop_pos_map, (st_data_t)fop, &poffset))
+		return *((uint64_t *) poffset);
 	else
-        return 0;
+		return 0;
 }
 
 // Sets the current file offset to the given offset
 static int fusent_set_file_offset(PFILE_OBJECT fop, uint64_t offset) {
-    int res;
+	int res;
 	st_data_t data_offset;
 
 	res = st_lookup(fusent_fop_pos_map, (st_data_t)fop, &data_offset) - 1;
 	if (!res)
-        *((uint64_t *) data_offset) = offset;
+		*((uint64_t *) data_offset) = offset;
 
-    return res;
+	return res;
 }
 
 // Given a path in `fn' (assume unix format), find the inode of the parent.
@@ -1813,10 +1827,13 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 {
 	FUSENT_RESP *resp = (FUSENT_RESP *)buf;
 	fusent_fill_resp(resp, pirp, fop, 0);
-    uint32_t readlen = buflen - sizeof(FUSENT_RESP);
+
+	uint32_t readlen = buflen - sizeof(FUSENT_RESP);
 	resp->params.read.buflen = readlen;
-    if(readlen == 0)
-        resp->status = STATUS_END_OF_FILE;
+
+	if (!readlen)
+		resp->status = STATUS_END_OF_FILE;
+
 	fusent_sendmsg(req, resp, buflen);
 }
 
@@ -1831,7 +1848,7 @@ static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJE
 	// Fill in the standard header bits:
 	fusent_fill_resp(resp, pirp, fop, 0);
 
-    resp->params.query.buflen = sizeof(FUSENT_FILE_INFORMATION);
+	resp->params.query.buflen = sizeof(FUSENT_FILE_INFORMATION);
 
 	// Fill in the rest:
 	fusent_unixtime_to_wintime(st->atime, &fileinfo->LastAccessTime);
@@ -2031,7 +2048,7 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 		goto reply_err_nt;
 	}
 
-    uint64_t current_offset = fusent_get_file_offset(fop);
+	uint64_t current_offset = fusent_get_file_offset(fop);
 
 	struct fuse_out_header outh;
 	char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
@@ -2044,7 +2061,7 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 	readargs.flags = fi->flags;
 	readargs.lock_owner = fi->lock_owner;
 	readargs.size = len;
-	readargs.offset = (uint64_t)off.QuadPart + current_offset; // w32 uses an i64, fuse wants u64
+	readargs.offset = fusent_readwrite_offset(current_offset, off);
 
 	fuse_ll_ops[FUSE_READ].func(req, inode, &readargs);
 
@@ -2057,7 +2074,7 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 		goto reply_err_nt;
 	}
 
-    fusent_set_file_offset(fop, current_offset + outh.len - sizeof(struct fuse_out_header));
+	fusent_set_file_offset(fop, readargs.offset + outh.len - sizeof(struct fuse_out_header));
 
 	fusent_reply_read(req, ntreq->pirp, ntreq->fop,
 			outh.len - sizeof(struct fuse_out_header) + sizeof(FUSENT_RESP),
@@ -2109,14 +2126,14 @@ static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 		memcpy(stoutbuf, outbufp, outbuflen);
 	}
 
-    uint64_t current_offset = fusent_get_file_offset(fop);
+	uint64_t current_offset = fusent_get_file_offset(fop);
 
 	struct fuse_write_in writeargs;
 	writeargs.fh = fi->fh;
 	writeargs.flags = fi->flags;
 	writeargs.lock_owner = fi->lock_owner;
 	writeargs.size = len;
-	writeargs.offset = (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+	writeargs.offset = fusent_readwrite_offset(current_offset, off);
 
 	fuse_ll_ops[FUSE_WRITE].func(req, inode, &writeargs);
 
@@ -2129,7 +2146,7 @@ static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 		goto reply_err_nt;
 	}
 
-    fusent_set_file_offset(fop, current_offset + written);
+	fusent_set_file_offset(fop, writeargs.offset + written);
 
 	fusent_reply_write(req, ntreq->pirp, ntreq->fop, written);
 	return;
@@ -2383,7 +2400,8 @@ static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 
 	struct fuse_out_header outh;
 	struct fuse_attr_out attr;
-    struct fuse_getattr_in args = {0, 0, 0};
+	struct fuse_getattr_in args = { 0 };
+
 	req->response_hijack = &outh;
 	req->response_hijack_buf = &attr;
 	req->response_hijack_buflen = sizeof(struct fuse_attr_out);
