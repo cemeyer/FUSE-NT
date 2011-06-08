@@ -2633,6 +2633,7 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 			fusent_do_close(ntreq, iosp, req);
 			break;
 
+		/*
 		case IRP_MJ_DEVICE_CONTROL:
 			fusent_do_device_control(ntreq, iosp, req);
 			break;
@@ -2640,11 +2641,13 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 		case IRP_MJ_FILE_SYSTEM_CONTROL:
 			fusent_do_file_system_control(ntreq, iosp, req);
 			break;
+		*/
 
 		case IRP_MJ_FLUSH_BUFFERS:
 			fusent_do_flush_buffers(ntreq, iosp, req);
 			break;
 
+		/*
 		case IRP_MJ_INTERNAL_DEVICE_CONTROL:
 			fusent_do_internal_device_control(ntreq, iosp, req);
 			break;
@@ -2656,12 +2659,14 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 		case IRP_MJ_POWER:
 			fusent_do_power(ntreq, iosp, req);
 			break;
+		*/
 
 		case IRP_MJ_QUERY_INFORMATION:
 			fprintf(stderr, "fusent: got QUERY_INFORMATION on %p\n", ntreq->fop);
 			fusent_do_query_information(ntreq, iosp, req);
 			break;
 
+		/*
 		case IRP_MJ_SET_INFORMATION:
 			fusent_do_set_information(ntreq, iosp, req);
 			break;
@@ -2673,6 +2678,7 @@ static void fusent_ll_process(void *data, const char *buf, size_t len,
 		case IRP_MJ_SYSTEM_CONTROL:
 			fusent_do_system_control(ntreq, iosp, req);
 			break;
+		*/
 
 		default:
 			err = ENOSYS;
