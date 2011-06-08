@@ -74,6 +74,12 @@ void fusent_translate_teardown()
 	iconv_close(cd_utf16le_to_utf8);
 }
 
+static inline size_t max_sz(size_t a, size_t b)
+{
+	if (a < b) return b;
+	return a;
+}
+
 // Add the fh <-> fop mapping to our maps:
 static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino, char *basename)
 {
@@ -89,7 +95,6 @@ static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_inf
 
 	st_insert(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)wcbasename);
 
-	fprintf(stderr, "4\n");
 	fprintf(stderr, "Added fop mapping: %p -> %p, %u, `%s'\n", fop, fi, ino, basename);
 }
 
@@ -1671,7 +1676,6 @@ static int fusent_set_file_offset(PFILE_OBJECT fop, uint64_t offset) {
 // Returns negative if the parent can't be found or the path is invalid:
 //      stdint.h -> err
 static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino_t *in) {
-	fprintf(stderr, "get_parent_inode(`%s')\n", fn);
 	if (*fn != '/') return -1;
 	if (!req->f->op.lookup) return -1;
 	fn ++;
@@ -1682,8 +1686,6 @@ static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino
 	char *hijackbuf = malloc(buflen);
 
 	for (;;) {
-		fprintf(stderr, "inode, path => %d, `%s')\n", curino, fn);
-
 		// This is totally fine in UTF-8, by the way:
 		char *nextsl = strchr(fn, '/');
 
@@ -1895,9 +1897,8 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	struct fuse_file_info *fi = NULL;
 
 	char *basename;
-	// This could be FUSENT_MAX_PATH + max(fuse_create, fuse_open), but I was lazy --cemeyer
-	char stbuf[sizeof(struct fuse_create_in) + 
-		sizeof(struct fuse_open_in) + FUSENT_MAX_PATH];
+	char *stbuf = malloc(FUSENT_MAX_PATH + max_sz(sizeof(struct fuse_create_in),
+				sizeof(struct fuse_open_in)));
 	char *outbuf, *outbuf2;
 
 	if (fuse_flags & O_CREAT)
@@ -1929,7 +1930,6 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 		fuse_ino_t par_inode;
 		if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
 			err = ENOENT;
-			fprintf(stderr, "1\n");
 			fprintf(stderr, "CREATE failed because parent does not exist: (%d)`%s' fnamep: (%d)`%S'\n", utf8len, outbuf2, fnamelen, fnamep);
 			goto reply_err_nt;
 		}
@@ -1950,7 +1950,6 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 		fuse_ino_t inode;
 		if (fusent_get_inode(req, outbuf2, &inode, &basename) < 0) {
 			err = ENOENT;
-			fprintf(stderr, "2\n");
 			fprintf(stderr, "OPEN failed because path does not exist: `%s'\n", outbuf2);
 			goto reply_err_nt;
 		}
@@ -1985,7 +1984,6 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 		// outh.error will be >= -1000 and <= 0:
 		err = -outh.error;
 		free(giantbuf);
-		fprintf(stderr, "3\n");
 		fprintf(stderr, "CREATE or OPEN failed (%s,%d): `%s'\n", strerror(-outh.error), -outh.error, outbuf2);
 		goto reply_err_nt;
 	}
@@ -2006,9 +2004,11 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 reply_create_nt:
 	fprintf(stderr, "CREATE|OPEN: replying success!\n");
 	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
+	free(stbuf);
 	return;
 
 reply_err_nt:
+	free(stbuf);
 	fprintf(stderr, "CREATE|OPEN: replying error(%d) `%s'\n", err, strerror(err));
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
