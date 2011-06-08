@@ -114,7 +114,7 @@ static inline uint64_t fusent_readwrite_offset(FILE_OBJECT *fop, uint64_t curoff
 	if ((issync == 1) && (
 				(off.LowPart == FILE_USE_FILE_POINTER_POSITION && off.HighPart == -1) ||
 				!off.QuadPart))
-		return current_offset;
+		return curoff;
 
 	if (off.QuadPart < 0)
 		fprintf(stderr, "Err: Got negative offset? %d\n", off.QuadPart);
