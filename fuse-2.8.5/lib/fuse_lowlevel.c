@@ -1992,9 +1992,9 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	// A huge hack to make this work for helloworld.
 	// TODO(cemeyer) make this general purpose (for any directory):
 	if (!strncmp(outbuf2, "/", utf8len)) {
-		fino = (fuse_ino_t)FUSE_ROOT_ID;
-		basename = (char*)malloc(sizeof(slash));
-		memcpy(basename, slash, sizeof(slash));
+		fino = FUSE_ROOT_ID;
+		basename = malloc(strlen("/") + 1);
+		memcpy(basename, "/", strlen("/") + 1);
 		goto reply_create_nt;
 	}
 
