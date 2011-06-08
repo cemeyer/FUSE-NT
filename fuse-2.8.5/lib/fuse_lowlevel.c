@@ -340,9 +340,10 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 		*req->response_hijack = out;
 		if (req->response_hijack_buf && count > 1) {
 			size_t len = iov[1].iov_len;
-
+			printf("reply_iov_nofree copying 0x%.8x bytes from 0x%.8x to 0x%.8x\n", len, iov[1].iov_base, req->response_hijack_buf);
 			// Ensure that buf is large enough to hold iov (copy as much as we can):
 			if (len > req->response_hijack_buflen) len = req->response_hijack_buflen;
+			
 			memcpy(req->response_hijack_buf, iov[1].iov_base, len);
 
 			// Report a possible short write:
@@ -2268,7 +2269,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	ULONG len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
 	struct fuse_out_header outh;
 	char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
-	memset(giantbuf, 0, sizeof(giantbuf));
+	memset(giantbuf, 0, sizeof(FUSENT_RESP) + len);
 	req->response_hijack = &outh;
 	req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
 	req->response_hijack_buflen = len;
@@ -2282,7 +2283,6 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	
 	struct fuse_open_out *outargs = (struct fuse_open_out *)req->response_hijack_buf;
 	
-	// retrieve the file handle!!
 	memset(&fi2, 0, sizeof(fi2));
 	fi2.fh = outargs->fh;
 	fi2.flags = outargs->open_flags;
@@ -2301,17 +2301,22 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	readargs.offset = 0;//(uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
 	
 	printf("%s\n", "fusent_do_directory_control -- 4");
-	memset(giantbuf, 0, sizeof(giantbuf));
+	printf("req->response_hijack_buf IS AT ADDR:0x%.8x\n", req->response_hijack_buf);
+	memset(giantbuf, 0, sizeof(FUSENT_RESP) + len);
 	fuse_ll_ops[FUSE_READDIR].func(req, inode, &readargs);
 	
 	printf("%s\n", "fusent_do_directory_control -- 5");
 	
+	//
+	// There really ought to be some dirents in here at this point...
+	// 
 	char *p = req->response_hijack_buf;
+	
 	while (p < req->response_hijack_buf + len) {
 		struct fuse_dirent *current = p;
-		size_t entsize = FUSE_DIRENT_ALIGN(FUSE_NAME_OFFSET + current->namelen);
+		size_t entsize = fuse_dirent_size(current->namelen);
 		p += entsize;
-		
+			
 		printf("current->name: %s\tentsize:0x%.8x\n", current->name, entsize);
 	}
 	
