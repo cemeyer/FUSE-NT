@@ -52,8 +52,12 @@ static iconv_t cd_utf16le_to_utf8;
 // Maps between open FileObject pointers (fops) and fuse_file_info pointers / inode numbers:
 static st_table *fusent_fop_fi_map;
 static st_table *fusent_fop_ino_map;
+// Map to basenames:
 static st_table *fusent_fop_basename_map;
+// Map to open file offsets:
 static st_table *fusent_fop_pos_map;
+// Map to open file sync flag:
+static st_table *fusent_fop_sync_map;
 
 void fusent_translate_setup()
 {
@@ -62,11 +66,13 @@ void fusent_translate_setup()
 	fusent_fop_ino_map = st_init_numtable();
 	fusent_fop_basename_map = st_init_numtable();
 	fusent_fop_pos_map = st_init_numtable();
+	fusent_fop_sync_map = st_init_numtable();
 }
 
 // Destroys any persistant data structures at shut down.
 void fusent_translate_teardown()
 {
+	st_free_table(fusent_fop_sync_map);
 	st_free_table(fusent_fop_pos_map);
 	st_free_table(fusent_fop_basename_map);
 	st_free_table(fusent_fop_ino_map);
@@ -80,25 +86,47 @@ static inline size_t max_sz(size_t a, size_t b)
 	return a;
 }
 
+// Returns 1 if sync, 0 if async, -1 on lookup fail:
+static inline int fusent_is_sync(FILE_OBJECT *fop)
+{
+	st_data_t issync;
+	if (!st_lookup(fusent_fop_sync_map, (st_data_t)fop, &issync))
+		return -1;
+
+	return (int)issync;
+}
+
 // Given a LARGE_INTEGER offset from an IO_STACK_LOCATION and the current file position,
 // figure out where a read or write should be performed:
-static inline uint64_t fusent_readwrite_offset(uint64_t curoff, LARGE_INTEGER off)
+static inline uint64_t fusent_readwrite_offset(FILE_OBJECT *fop, uint64_t curoff, LARGE_INTEGER off)
 {
+	int issync = fusent_is_sync(fop);
+
+	if (issync < 0)
+		fprintf(stderr, "Err: couldn't find sync flag for fop: %p\n", fop);
+
 	// This is how I interpret http://msdn.microsoft.com/en-us/library/ff549327.aspx --cemeyer:
-	if ((off.LowPart == FILE_USE_FILE_POINTER_POSITION && off.HighPart == -1) ||
-			!off.QuadPart)
+	if ((issync == 1) && (
+				(off.LowPart == FILE_USE_FILE_POINTER_POSITION && off.HighPart == -1) ||
+				!off.QuadPart))
 		return current_offset;
+
 	if (off.QuadPart < 0)
 		fprintf(stderr, "Err: Got negative offset? %d\n", off.QuadPart);
+
 	return (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
 }
 
 // Add the fh <-> fop mapping to our maps:
-static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino, char *basename)
+static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino, char *basename, int issync)
 {
 	st_insert(fusent_fop_fi_map, (st_data_t)fop, (st_data_t)fi);
 	st_insert(fusent_fop_ino_map, (st_data_t)fop, (st_data_t)ino);
-	st_insert(fusent_fop_pos_map, (st_data_t)fop, (st_data_t)calloc(1, sizeof(uint64_t)));
+	uint64_t *fpos = calloc(1, sizeof(uint64_t));
+	*fpos = 0;
+	st_insert(fusent_fop_pos_map, (st_data_t)fop, (st_data_t)fpos);
+	uintptr_t sync = issync;
+	st_insert(fusent_fop_sync_map, (st_data_t)fop, (st_data_t)sync);
 
 	// Transcode the basename into native Windows WCHARs:
 	size_t bnlen = strlen(basename);
@@ -156,6 +184,9 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 	if (st_delete(fusent_fop_pos_map, &irfop, &pos)) {
 		if (pos) free(pos);
 	}
+
+	irfop = (st_data_t)fop;
+	st_delete(fusent_fop_sync_map, &irfop, NULL);
 }
 
 // Translates a unix mode_t to windows' FileAttributes ULONG
@@ -1904,6 +1935,12 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
 	uint8_t CreateDisp = CreateOptions >> 24;
 
+	int issync = 0;
+	if ((CreateOptions & FILE_SYNCHRONOUS_IO_ALERT) ||
+			(CreateOptions & FILE_SYNCHRONOUS_IO_NONALERT) ||
+			(ntreq->irp.Flags & IRP_SYNCHRONOUS_API))
+		issync = 1;
+
 	int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
 	if (CreateDisp != FILE_OPEN && CreateDisp != FILE_OVERWRITE)
 		fuse_flags |= O_CREAT;
@@ -2039,11 +2076,9 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	fi->flags = openresp->open_flags;
 	free(giantbuf);
 
-	
-
 reply_create_nt:
 	fprintf(stderr, "CREATE|OPEN: replying success!\n");
-	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename);
+	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename, issync);
 	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 	free(stbuf);
 	return;
@@ -2085,7 +2120,7 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 	readargs.flags = fi->flags;
 	readargs.lock_owner = fi->lock_owner;
 	readargs.size = len;
-	readargs.offset = fusent_readwrite_offset(current_offset, off);
+	readargs.offset = fusent_readwrite_offset(fop, current_offset, off);
 
 	fuse_ll_ops[FUSE_READ].func(req, inode, &readargs);
 
@@ -2157,7 +2192,7 @@ static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 	writeargs.flags = fi->flags;
 	writeargs.lock_owner = fi->lock_owner;
 	writeargs.size = len;
-	writeargs.offset = fusent_readwrite_offset(current_offset, off);
+	writeargs.offset = fusent_readwrite_offset(fop, current_offset, off);
 
 	fuse_ll_ops[FUSE_WRITE].func(req, inode, &writeargs);
 
