@@ -2272,7 +2272,13 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	fi2.fh = outargs->fh;
 	fi2.flags = outargs->open_flags;
 	
-	fprintf(stderr, "OPENDIR succeeded, basename: '%S'\n", bn); 
+	fprintf(stderr, "OPENDIR succeeded!\n");
+	fflush(stderr);
+	char fn[256];
+	size_t fnlen = fusent_transcode(bn, wcslen(bn), fn, 255, "UTF-16LE", "UTF-8");
+	fn[min(fnlen, 255)] = '\0';
+	fprintf(stderr, "basename: `%s'\n", fn);
+	fflush(stderr);
 	
 	struct fuse_read_in readargs;
 	readargs.fh = fi2.fh;
