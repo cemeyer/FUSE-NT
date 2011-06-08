@@ -2497,7 +2497,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	dl->off = p - dl->listing;
 
 	// Reply with a big fat buf!
-	fusent_reply_read(req, pirp, fop, o - outbuf, outbuf);
+	fusent_reply_read(req, ntreq->pirp, fop, o - outbuf, outbuf);
 	free(outbuf);
 	return;
 
