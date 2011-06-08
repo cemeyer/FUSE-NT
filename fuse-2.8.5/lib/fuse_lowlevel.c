@@ -1054,8 +1054,6 @@ static void do_opendir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 //
 // debug hack
 //
-void fuse_lib_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
-			     off_t off, struct fuse_file_info *llfi);
 static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 {
 	struct fuse_read_in *arg = (struct fuse_read_in *) inarg;
@@ -1072,7 +1070,7 @@ static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		printf("req->f->op:%.8x\n", req->f->op);
 		printf("req->f->op.readdir:%.8x\n", req->f->op.readdir);
 		printf("*(req->f->op.readdir):%.8x\n", *(req->f->op.readdir));
-		printf("addr of fuse_lib_readdir():%.8x\n", fuse_lib_readdir);
+		//printf("addr of fuse_lib_readdir():%.8x\n", fuse_lib_readdir);
 		printf("arg: %.8x\n", arg);
 		printf("arg->size: %.8x\n", arg->size);
 		printf("arg->offset: %.8x\n", arg->offset);
