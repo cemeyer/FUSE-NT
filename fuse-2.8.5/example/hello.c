@@ -16,7 +16,24 @@
 #include <errno.h>
 #include <fcntl.h>
 
-static const char *hello_str = "Hello World!\n";
+static const char *hello_str = "Hello World!\n                                                                                          "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                       "
+"                                                                                                                                54321\n";
+
 static const char *hello_path = "/hello";
 
 static int hello_getattr(const char *path, struct stat *stbuf)
@@ -74,7 +91,7 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 {
 	size_t len;
 	(void) fi;
-	fprintf(stderr, "hello.c: hello_read `%s'\n", path);
+	fprintf(stderr, "hello.c: hello_read `%s' (off: %ld, len: %ld)\n", path, offset, size);
 	if(strcmp(path, hello_path) != 0)
 		return -ENOENT;
 
