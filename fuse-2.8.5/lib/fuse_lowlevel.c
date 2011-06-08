@@ -1967,9 +1967,7 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	fuse_ino_t llinode;
 	int llop, err;
 
-	// Don't worry, this gets initialized. Compiler warning is ignorable --cemeyer
-	fuse_ino_t fino;
-
+	fuse_ino_t fino = 0;;
 	struct fuse_file_info *fi = NULL;
 
 	char *basename;
@@ -2101,11 +2099,9 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 	LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
 	int err;
 
-	// Likewise, fi and inode get initialized by fusent_fi_inode_from_fop().
-	// Bogus compiler warning. --cemeyer
-	struct fuse_file_info *fi;
-	fuse_ino_t inode;
-	WCHAR *bn;
+	struct fuse_file_info *fi = NULL;
+	fuse_ino_t inode = 0;
+	WCHAR *bn = NULL;
 	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
 		err = EBADF;
 		goto reply_err_nt;
@@ -2158,11 +2154,9 @@ static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 	LARGE_INTEGER off = iosp->Parameters.Write.ByteOffset;
 	int err;
 
-	// fi and inode get initialized by fusent_fi_inode_from_fop().
-	// Bogus compiler warning. --cemeyer
-	struct fuse_file_info *fi;
-	fuse_ino_t inode;
-	WCHAR *bn;
+	struct fuse_file_info *fi = NULL;
+	fuse_ino_t inode = 0;
+	WCHAR *bn = NULL;
 	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
 		err = EBADF;
 		goto reply_err_nt;
@@ -2251,7 +2245,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	// FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
 	
 	uint32_t len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
-	fprintf(stderr, "dirctrl: Got buflen %u, we're using: %u\n", irpsp->Parameters.QueryDirectory.Length, len);
+	fprintf(stderr, "dirctrl: Got buflen %u, we're using: %u\n", (unsigned)irpsp->Parameters.QueryDirectory.Length, (unsigned)len);
 
 	struct fuse_out_header outh;
 	char *giantbuf = malloc(len);
@@ -2321,7 +2315,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		}
 		if (reclen > nbytes) break;
 
-		fprintf(stderr, "current->name: %.*s\treclen:0x%.8x\n", dirent->name, dirent->namelen, reclen);
+		fprintf(stderr, "current->name: %.*s\treclen:0x%.8x\n", (int)dirent->namelen, dirent->name, reclen);
 
 		// TODO: do shit with this dirent
 
@@ -2462,9 +2456,9 @@ static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	PFILE_OBJECT fop = ntreq->fop;
 	int err;
 
-	struct fuse_file_info *fi;
-	fuse_ino_t inode;
-	WCHAR *basename;
+	struct fuse_file_info *fi = NULL;
+	fuse_ino_t inode = 0;
+	WCHAR *basename = NULL;
 	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &basename) < 0) {
 		err = EBADF;
 		goto reply_err_nt;
