@@ -2265,7 +2265,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		goto reply_err_nt;
 	}
 	
-	struct fuse_open_out *outargs = (struct fuse_open_out *)req->response_hijack_buf;
+	struct fuse_open_out *outargs = (struct fuse_open_out *)giantbuf;
 	
 	struct fuse_file_info fi2;
 	memset(&fi2, 0, sizeof(fi2));
