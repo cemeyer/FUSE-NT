@@ -1015,6 +1015,11 @@ static void do_opendir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		fuse_reply_open(req, &fi);
 }
 
+//
+// debug hack
+//
+void fuse_lib_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
+			     off_t off, struct fuse_file_info *llfi);
 static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 {
 	struct fuse_read_in *arg = (struct fuse_read_in *) inarg;
@@ -1024,10 +1029,24 @@ static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	fi.fh = arg->fh;
 	fi.fh_old = fi.fh;
 
-	if (req->f->op.readdir)
+		if (req->f->op.readdir) {
+		printf("do_readdir dispatching to op.readdir()\n");
+		printf("req:%.8x\n", req);
+		printf("req->f:%.8x\n", req->f);
+		printf("req->f->op:%.8x\n", req->f->op);
+		printf("req->f->op.readdir:%.8x\n", req->f->op.readdir);
+		printf("*(req->f->op.readdir):%.8x\n", *(req->f->op.readdir));
+		printf("addr of fuse_lib_readdir():%.8x\n", fuse_lib_readdir);
+		printf("arg: %.8x\n", arg);
+		printf("arg->size: %.8x\n", arg->size);
+		printf("arg->offset: %.8x\n", arg->offset);
+		printf("nodeid:%.8x, fi:%.8x\n", nodeid, &fi);
 		req->f->op.readdir(req, nodeid, arg->size, arg->offset, &fi);
-	else
+	}
+	else {
+		printf("do_readdir calling fuse_reply_err()\n");
 		fuse_reply_err(req, ENOSYS);
+	}
 }
 
 static void do_releasedir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
@@ -1935,8 +1954,12 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 
 	// A huge hack to make this work for helloworld.
 	// TODO(cemeyer) make this general purpose (for any directory):
-	if (!strncmp(outbuf2, "/", utf8len))
+	if (!strncmp(outbuf2, "/", utf8len)) {
+		fino = (fuse_ino_t)FUSE_ROOT_ID;
+		basename = (char*)malloc(sizeof(slash));
+		memcpy(basename, slash, sizeof(slash));
 		goto reply_create_nt;
+	}
 
 	if (fuse_flags & O_CREAT) {
 		// Look up inode for the parent directory of the file we want to create:
@@ -2016,10 +2039,11 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 	fi->flags = openresp->open_flags;
 	free(giantbuf);
 
-	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename);
+	
 
 reply_create_nt:
 	fprintf(stderr, "CREATE|OPEN: replying success!\n");
+	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename);
 	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
 	free(stbuf);
 	return;
