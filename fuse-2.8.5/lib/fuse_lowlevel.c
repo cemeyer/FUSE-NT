@@ -1995,6 +1995,7 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 
 	// A huge hack to make this work for helloworld.
 	// TODO(cemeyer) make this general purpose (for any directory):
+	// (This will require getattr'ing the file, I think.)
 	if (!strncmp(outbuf2, "/", utf8len)) {
 		fino = FUSE_ROOT_ID;
 		basename = malloc(strlen("/") + 1);
@@ -2221,16 +2222,8 @@ reply_err_nt:
 // Handle an IRP_MJ_DIRECTORY_CONTROL request
 static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
-//
-// Right now, this should call opendir, then readdir, then print out the name of the first dirent
-// it receives. It's close, but right now it doesn't work for some reason.
-// -Rob
-//
-
 	PFILE_OBJECT fop = ntreq->fop;
 	int err;
-	
-	printf("%s\n", "hello from fusent_do_directory_control");
 	
 	// For more info on these params, see the MSDN on IRP_MJ_DIRECTORY_CONTROL:
 	// http://msdn.microsoft.com/en-us/library/ff548658(v=vs.85).aspx
@@ -2241,87 +2234,101 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		goto reply_err_nt;
 	}
 	
-	printf("%s\n", "fusent_do_directory_control -- 1");
-	
-	struct fuse_file_info *fi;
-	struct fuse_file_info fi2;
-	fuse_ino_t inode;
+	// Make sure this file has already been opened:
+	struct fuse_file_info *fi = NULL;
+	fuse_ino_t inode = 0;
 	WCHAR* bn = NULL;
 	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
 		err = EBADF;
-		
-		printf("%s\n", "fusent_do_directory_control -- fop lookup failed.");
-		printf("fail basename: '%s'\n", bn); 
 		goto reply_err_nt;
 	}
 	
 	struct fuse_open_in openargs;
 	memset(&openargs, 0, sizeof(openargs));
-	openargs.flags = O_CREAT | O_RDONLY;
+	openargs.flags = O_RDONLY;
 	
-		//
-	// For now, we return all info regardless of which FIC is requested, and
-	// leave it to the kernel driver to sort out which fields it really needs.
-	//
-	/* FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass; */
+	// For now, we ignore FILE_INFORMATION_CLASS and just return some set of fields
+	// to the kernel, which sorts out which fields each request needs.
+	// FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
 	
-	// UNICODE_STRING *fn = irpsp->Parameters.QueryDirectory.FileName;
-	ULONG len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
+	uint32_t len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
+	fprintf(stderr, "dirctrl: Got buflen %lu, we're using: %lu\n", irpsp->Parameters.QueryDirectory.Length, len);
+
 	struct fuse_out_header outh;
-	char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
-	memset(giantbuf, 0, sizeof(FUSENT_RESP) + len);
+	char *giantbuf = malloc(len);
 	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
+	req->response_hijack_buf = giantbuf;
 	req->response_hijack_buflen = len;
-	
-	printf("%s\n", "fusent_do_directory_control -- 1.5");
-	
 
 	fuse_ll_ops[FUSE_OPENDIR].func(req, inode, &openargs);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		err = -outh.error;
+		free(giantbuf);
+		fprintf(stderr, "OPENDIR failed (%s, %d)\n", strerror(err), err);
+		goto reply_err_nt;
+	}
 	
-	printf("%s\n", "fusent_do_directory_control -- 1.6");
+	struct fuse_open_out *outargs = req->response_hijack_buf;
 	
-	struct fuse_open_out *outargs = (struct fuse_open_out *)req->response_hijack_buf;
-	
+	struct fuse_file_info fi2;
 	memset(&fi2, 0, sizeof(fi2));
 	fi2.fh = outargs->fh;
 	fi2.flags = outargs->open_flags;
 	
-	printf("%s\n", "fusent_do_directory_control -- 2");
-	printf("good basename: '%s'\n", bn); 
-
-	printf("%s\n", "fusent_do_directory_control -- 3");
+	fprintf("OPENDIR succeeded, basename: '%S'\n", bn); 
 	
-	// create a readargs struct and fill it out appropriately
 	struct fuse_read_in readargs;
 	readargs.fh = fi2.fh;
 	readargs.flags = fi2.flags;
 	readargs.lock_owner = fi2.lock_owner;
 	readargs.size = len;
-	readargs.offset = 0;//(uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
+	readargs.offset = 0; // TODO: care about this
 	
-	printf("%s\n", "fusent_do_directory_control -- 4");
-	printf("req->response_hijack_buf IS AT ADDR:0x%.8x\n", req->response_hijack_buf);
-	memset(giantbuf, 0, sizeof(FUSENT_RESP) + len);
+	req->response_hijack = &outh;
+	req->response_hijack_buf = giantbuf;
+	req->response_hijack_buflen = len;
+
 	fuse_ll_ops[FUSE_READDIR].func(req, inode, &readargs);
-	
-	printf("%s\n", "fusent_do_directory_control -- 5");
-	
-	//
-	// There really ought to be some dirents in here at this point...
-	// 
-	char *p = req->response_hijack_buf;
-	
-	while (p < req->response_hijack_buf + len) {
-		struct fuse_dirent *current = p;
-		size_t entsize = fuse_dirent_size(current->namelen);
-		p += entsize;
-			
-		printf("current->name: %s\tentsize:0x%.8x\n", current->name, entsize);
+
+	req->response_hijack = NULL;
+	req->response_hijack_buf = NULL;
+
+	if (outh.error) {
+		err = -outh.error;
+		free(giantbuf);
+		fprintf(stderr, "READDIR failed (%s, %d)\n", strerror(err), err);
+		goto reply_err_nt;
 	}
 	
-	err = ENOSYS;
-	goto reply_err_nt;
+	char *p = giantbuf;
+	size_t nbytes = outh.len - sizeof(struct fuse_out_header);
+
+	// Ripped more or less directly from the Linux kernel fuse fs function parse_dirfile in dir.c:
+	while (nbytes >= FUSE_NAME_OFFSET) {
+		struct fuse_dirent *dirent = p;
+		size_t reclen = fuse_dirent_size(dirent->namelen);
+
+		if (!dirent->namelen || dirent->namelen > FUSE_NAME_MAX) {
+			err = EIO;
+			goto reply_err_nt;
+		}
+		if (reclen > nbytes) break;
+
+		fprintf("current->name: %.*s\treclen:0x%.8x\n", dirent->name, dirent->namelen, reclen);
+
+		// TODO: do shit with this dirent
+
+		p += reclen;
+		nbytes -= reclen;
+		fusent_set_file_offset(fop, fusent_get_file_offset(fop) + nbytes);
+	}
+	
+	err = ENOENT;
+	//goto reply_err_nt; // fall through
 
 reply_err_nt:
 	
