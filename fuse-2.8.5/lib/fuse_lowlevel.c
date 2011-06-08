@@ -2483,7 +2483,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	// how this should work; whatever:
 	if (!lastfdi) {
 		FUSENT_RESP resp;
-		fusent_fill_resp(&resp, pirp, fop, 0);
+		fusent_fill_resp(&resp, ntreq->pirp, fop, 0);
 		resp.status = STATUS_BUFFER_OVERFLOW;
 		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
 		free(outbuf);
