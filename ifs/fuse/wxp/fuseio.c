@@ -497,7 +497,7 @@ FuseCopyResponse (
                         } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_QUERY_INFORMATION) {
                             ULONG BufferLength = FuseNtResp->params.query.buflen;
                             FUSENT_FILE_INFORMATION* FileInformation = (FUSENT_FILE_INFORMATION*) (FuseNtResp + 1);
-                            STATUS_END_OF_FILE
+
                             if(BufferLength >= sizeof(FUSENT_FILE_INFORMATION)) {
 
                                 Status = FuseCopyInformation(UserspaceIrp, FileInformation, BufferLength);
