@@ -117,7 +117,7 @@ static inline uint64_t fusent_readwrite_offset(FILE_OBJECT *fop, uint64_t curoff
 		return curoff;
 
 	if (off.QuadPart < 0)
-		fprintf(stderr, "Err: Got negative offset? %d\n", off.QuadPart);
+		fprintf(stderr, "Err: Got negative offset? %lld\n", off.QuadPart);
 
 	return (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
 }
@@ -141,7 +141,7 @@ static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_inf
 
 	st_insert(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)wcbasename);
 
-	fprintf(stderr, "Added fop mapping: %p -> %p, %u, `%s'\n", fop, fi, ino, basename);
+	fprintf(stderr, "Added fop mapping: %p -> %p, %lu, `%s'\n", fop, fi, ino, basename);
 }
 
 // Lookup the corresponding file_info pointer for an open file handle (fop).
@@ -187,7 +187,7 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 	irfop = (st_data_t)fop;
 	st_data_t pos;
 	if (st_delete(fusent_fop_pos_map, &irfop, &pos)) {
-		if (pos) free(pos);
+		if (pos) free((uint64_t *)pos);
 	}
 
 	irfop = (st_data_t)fop;
@@ -340,7 +340,7 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 		*req->response_hijack = out;
 		if (req->response_hijack_buf && count > 1) {
 			size_t len = iov[1].iov_len;
-			printf("reply_iov_nofree copying 0x%.8x bytes from 0x%.8x to 0x%.8x\n", len, iov[1].iov_base, req->response_hijack_buf);
+			printf("reply_iov_nofree copying 0x%.8x bytes from %p to %p\n", len, iov[1].iov_base, req->response_hijack_buf);
 			// Ensure that buf is large enough to hold iov (copy as much as we can):
 			if (len > req->response_hijack_buflen) len = req->response_hijack_buflen;
 			
@@ -1064,18 +1064,17 @@ static void do_readdir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	fi.fh = arg->fh;
 	fi.fh_old = fi.fh;
 
-		if (req->f->op.readdir) {
+	if (req->f->op.readdir) {
 		printf("do_readdir dispatching to op.readdir()\n");
-		printf("req:%.8x\n", req);
-		printf("req->f:%.8x\n", req->f);
-		printf("req->f->op:%.8x\n", req->f->op);
-		printf("req->f->op.readdir:%.8x\n", req->f->op.readdir);
-		printf("*(req->f->op.readdir):%.8x\n", *(req->f->op.readdir));
+		printf("req:%p\n", req);
+		printf("req->f:%p\n", req->f);
+		//printf("req->f->op:%.8x\n", req->f->op);
+		printf("req->f->op.readdir:%p\n", req->f->op.readdir);
 		//printf("addr of fuse_lib_readdir():%.8x\n", fuse_lib_readdir);
-		printf("arg: %.8x\n", arg);
+		printf("arg: %p\n", arg);
 		printf("arg->size: %.8x\n", arg->size);
-		printf("arg->offset: %.8x\n", arg->offset);
-		printf("nodeid:%.8x, fi:%.8x\n", nodeid, &fi);
+		printf("arg->offset: %.16llx\n", arg->offset);
+		printf("nodeid:%.8lx, fi:%p\n", nodeid, &fi);
 		req->f->op.readdir(req, nodeid, arg->size, arg->offset, &fi);
 	}
 	else {
@@ -2036,7 +2035,7 @@ static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_re
 			goto reply_err_nt;
 		}
 
-		fprintf(stderr, "OPEN: resolved `%s' -> %d\n", outbuf2, inode);
+		fprintf(stderr, "OPEN: resolved `%s' -> %lu\n", outbuf2, inode);
 
 		fino = inode;
 
@@ -2252,7 +2251,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	// FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
 	
 	uint32_t len = 512; // I have no idea. //irpsp->Parameters.QueryDirectory.Length;
-	fprintf(stderr, "dirctrl: Got buflen %lu, we're using: %lu\n", irpsp->Parameters.QueryDirectory.Length, len);
+	fprintf(stderr, "dirctrl: Got buflen %u, we're using: %u\n", irpsp->Parameters.QueryDirectory.Length, len);
 
 	struct fuse_out_header outh;
 	char *giantbuf = malloc(len);
@@ -2272,14 +2271,14 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		goto reply_err_nt;
 	}
 	
-	struct fuse_open_out *outargs = req->response_hijack_buf;
+	struct fuse_open_out *outargs = (struct fuse_open_out *)req->response_hijack_buf;
 	
 	struct fuse_file_info fi2;
 	memset(&fi2, 0, sizeof(fi2));
 	fi2.fh = outargs->fh;
 	fi2.flags = outargs->open_flags;
 	
-	fprintf("OPENDIR succeeded, basename: '%S'\n", bn); 
+	fprintf(stderr, "OPENDIR succeeded, basename: '%S'\n", bn); 
 	
 	struct fuse_read_in readargs;
 	readargs.fh = fi2.fh;
@@ -2307,9 +2306,13 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	char *p = giantbuf;
 	size_t nbytes = outh.len - sizeof(struct fuse_out_header);
 
+	// Hack (stolen from kernel/fuse_i.h):
+#define FUSE_NAME_MAX 1024
+
 	// Ripped more or less directly from the Linux kernel fuse fs function parse_dirfile in dir.c:
+
 	while (nbytes >= FUSE_NAME_OFFSET) {
-		struct fuse_dirent *dirent = p;
+		struct fuse_dirent *dirent = (struct fuse_dirent *)p;
 		size_t reclen = fuse_dirent_size(dirent->namelen);
 
 		if (!dirent->namelen || dirent->namelen > FUSE_NAME_MAX) {
@@ -2318,7 +2321,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		}
 		if (reclen > nbytes) break;
 
-		fprintf("current->name: %.*s\treclen:0x%.8x\n", dirent->name, dirent->namelen, reclen);
+		fprintf(stderr, "current->name: %.*s\treclen:0x%.8x\n", dirent->name, dirent->namelen, reclen);
 
 		// TODO: do shit with this dirent
 
@@ -2359,6 +2362,7 @@ reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
+/*
 // Handle an IRP_MJ_DEVICE_CONTROL request
 static void fusent_do_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
@@ -2388,6 +2392,7 @@ static void fusent_do_file_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *
 reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
+*/
 
 // Handle an IRP_MJ_FLUSH_BUFFERS request
 static void fusent_do_flush_buffers(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
@@ -2404,6 +2409,7 @@ reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
+/*
 // Handle an IRP_MJ_INTERNAL_DEVICE_CONTROL request
 static void fusent_do_internal_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
@@ -2448,6 +2454,7 @@ static void fusent_do_power(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req
 reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
+*/
 
 // Handle an IRP_MJ_QUERY_INFORMATION request
 static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
@@ -2465,10 +2472,10 @@ static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 
 	struct fuse_out_header outh;
 	struct fuse_attr_out attr;
-	struct fuse_getattr_in args = { 0 };
+	struct fuse_getattr_in args = { 0, 0, 0 };
 
 	req->response_hijack = &outh;
-	req->response_hijack_buf = &attr;
+	req->response_hijack_buf = (char *)&attr;
 	req->response_hijack_buflen = sizeof(struct fuse_attr_out);
 
 	fuse_ll_ops[FUSE_GETATTR].func(req, inode, &args);
@@ -2478,6 +2485,7 @@ static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 
 	if (outh.error) {
 		err = -outh.error;
+		fprintf(stderr, "QUERY_INFO failed (%s, %d)\n", strerror(err), err);
 		goto reply_err_nt;
 	}
 
@@ -2488,6 +2496,7 @@ reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
 
+/*
 // Handle an IRP_MJ_SET_INFORMATION request
 static void fusent_do_set_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 {
@@ -2532,6 +2541,7 @@ static void fusent_do_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp,
 reply_err_nt:
 	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 }
+*/
 
 // Initialize FUSE (HACK)
 static void fusent_do_init(struct fuse_ll *f)
