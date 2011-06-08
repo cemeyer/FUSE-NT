@@ -410,7 +410,7 @@ size_t fuse_dirent_size(size_t namelen)
 	return FUSE_DIRENT_ALIGN(FUSE_NAME_OFFSET + namelen);
 }
 
-size_t fusent_fdient_size(size_t namelenbytes)
+static size_t fusent_fdient_size(size_t namelenbytes)
 {
 	// Turns out FUSE_DIRENT_ALIGN aligns along 8-byte boundaries too; this
 	// is all Windows requires for packed FILE_DIRECTORY_INFORMATION structs.
@@ -2348,7 +2348,7 @@ static int fusent_do_buffer_dirlisting(FUSENT_REQ *ntreq, EXTENDED_IO_STACK_LOCA
 		fdient->FileIndex = 0; // we pick an arbitrary value; this is undefined on all but FAT anyways.
 
 		// Most of this is stolen from fusent_reply_query
-		fusent_unixtime_to_wintime(0, &fileinfo->CreationTime);
+		fusent_unixtime_to_wintime(0, &fdient->CreationTime);
 		fusent_unixtime_to_wintime(st->atime, &fdient->LastAccessTime);
 		fusent_unixtime_to_wintime(st->mtime, &fdient->LastWriteTime);
 
@@ -2379,8 +2379,8 @@ static int fusent_do_buffer_dirlisting(FUSENT_REQ *ntreq, EXTENDED_IO_STACK_LOCA
 	dl->listing = NULL;
 	if (lastfdi) {
 		lastfdi->NextEntryOffset = 0;
-		dl->len += ((char *)lastfdi->FileName) + lastfdi->FileNameLength - outbuf;
-		dl->listing = outbuf
+		dl->len = ((char *)lastfdi->FileName) + lastfdi->FileNameLength - outbuf;
+		dl->listing = outbuf;
 	}
 	else {
 		free(outbuf);
@@ -2432,7 +2432,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		st_lookup(fusent_fop_dirlisting_map, irfop, &rdl);
 		FUSENT_DIRLISTING *dl = (FUSENT_DIRLISTING *)rdl;
 		if (dl->listing) free(dl->listing);
-		irfop = fop;
+		irfop = (st_data_t)fop;
 		st_delete(fusent_fop_dirlisting_map, &irfop, NULL);
 	}
 
@@ -2448,8 +2448,8 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	// If we've already traversed the entire directory:
 	if (dl->off >= dl->len) {
 		FUSENT_RESP resp;
-		fusent_fill_resp(&resp, pirp, fop, 0);
-		resp->status = STATUS_NO_MORE_FILES;
+		fusent_fill_resp(&resp, ntreq->pirp, fop, 0);
+		resp.status = STATUS_NO_MORE_FILES;
 		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
 		return;
 	}
@@ -2484,7 +2484,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	if (!lastfdi) {
 		FUSENT_RESP resp;
 		fusent_fill_resp(&resp, pirp, fop, 0);
-		resp->status = STATUS_BUFFER_OVERFLOW;
+		resp.status = STATUS_BUFFER_OVERFLOW;
 		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
 		free(outbuf);
 		return;
