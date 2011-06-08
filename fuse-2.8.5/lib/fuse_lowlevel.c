@@ -98,6 +98,11 @@ static inline int fusent_is_sync(FILE_OBJECT *fop)
 
 // Given a LARGE_INTEGER offset from an IO_STACK_LOCATION and the current file position,
 // figure out where a read or write should be performed:
+//
+// Hack:
+#ifndef FILE_USE_FILE_POINTER_POSITION
+# define FILE_USE_FILE_POINTER_POSITION (-2)
+#endif
 static inline uint64_t fusent_readwrite_offset(FILE_OBJECT *fop, uint64_t curoff, LARGE_INTEGER off)
 {
 	int issync = fusent_is_sync(fop);
