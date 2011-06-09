@@ -1890,6 +1890,20 @@ static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint3
 	fusent_sendmsg(req, resp, buflen);
 }
 
+// Send a successful response to an IRP_MJ_DIRECTORY_CONTROL irp down to the kernel:
+// buf should have space for a FUSENT_RESP at the beginning.
+// buflen includes this.
+static void fusent_reply_dirctrl(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint32_t buflen, char *buf)
+{
+	FUSENT_RESP *resp = (FUSENT_RESP *)buf;
+	fusent_fill_resp(resp, pirp, fop, 0);
+
+	uint32_t readlen = buflen - sizeof(FUSENT_RESP);
+	resp->params.dirctrl.buflen = readlen;
+
+	fusent_sendmsg(req, resp, buflen);
+}
+
 static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, struct fuse_attr *st, WCHAR *basename)
 {
 	size_t buflen = sizeof(FUSENT_RESP) + sizeof(FUSENT_FILE_INFORMATION);
@@ -2318,30 +2332,32 @@ static int fusent_do_buffer_dirlisting(FUSENT_REQ *ntreq, EXTENDED_IO_STACK_LOCA
 		size_t fdilen = fusent_fdient_size(utf16lenbytes);
 		if (fdilen > nbytesout) break;
 
-		fprintf(stderr, "dirctrl: dirent->name: %.*s\treclen:0x%.8x\n", (int)dirent->namelen, dirent->name, reclen);
+		fprintf(stderr, "dirctrl: dirent->name: %.*s\treclen:0x%.8x\tino: %llu\n", (int)dirent->namelen, dirent->name, reclen, dirent->ino);
 
 		struct fuse_attr_out attr;
 		struct fuse_out_header outh2;
 		struct fuse_getattr_in args = { 0, 0, 0 };
 
-		req->response_hijack = &outh2;
-		req->response_hijack_buf = (char *)&attr;
-		req->response_hijack_buflen = sizeof(struct fuse_attr_out);
+		// TODO lookup first if dirent->ino == FUSE_UNKNOWN_INO
+		//req->response_hijack = &outh2;
+		//req->response_hijack_buf = (char *)&attr;
+		//req->response_hijack_buflen = sizeof(struct fuse_attr_out);
 
-		fuse_ll_ops[FUSE_GETATTR].func(req, dirent->ino, &args);
+		//fuse_ll_ops[FUSE_GETATTR].func(req, dirent->ino, &args);
 
-		req->response_hijack = NULL;
-		req->response_hijack_buf = NULL;
+		//req->response_hijack = NULL;
+		//req->response_hijack_buf = NULL;
 
-		if (outh2.error) {
-			err = -outh2.error;
-			free(giantbuf);
-			free(fnbuf);
-			free(outbuf);
-			fprintf(stderr, "GETATTR failed mid-DIR_CONTROL (%s, %d)\n", strerror(err), err);
-			return err;
-		}
+		//if (outh2.error) {
+		//	err = -outh2.error;
+		//	free(giantbuf);
+		//	free(fnbuf);
+		//	free(outbuf);
+		//	fprintf(stderr, "GETATTR failed mid-DIR_CONTROL (%s, %d)\n", strerror(err), err);
+		//	return err;
+		//}
 
+		memset(&attr, 0, sizeof(struct fuse_attr_out)); // temporary
 		struct fuse_attr *st = &attr.attr;
 
 		fdient->NextEntryOffset = fdilen;
@@ -2447,6 +2463,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 
 	// If we've already traversed the entire directory:
 	if (dl->off >= dl->len) {
+		fprintf(stderr, "DIRECTORY_CONTROL: NO MORE FILES\n");
 		FUSENT_RESP resp;
 		fusent_fill_resp(&resp, ntreq->pirp, fop, 0);
 		resp.status = STATUS_NO_MORE_FILES;
@@ -2461,6 +2478,7 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	char *o = outbuf + sizeof(FUSENT_RESP);
 	char *p = dl->listing + dl->off;
 
+	int recordscopied = 0;
 	FILE_DIRECTORY_INFORMATION *lastfdi = NULL;
 	while (bytesleft >= sizeof(FILE_DIRECTORY_INFORMATION) && p < dl->listing + dl->len) {
 		FILE_DIRECTORY_INFORMATION *fdient = (FILE_DIRECTORY_INFORMATION *)p;
@@ -2473,15 +2491,21 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		o += fdilen;
 		p += fdilen;
 		bytesleft -= fdilen;
+		recordscopied ++;
+
+		fprintf(stderr, "  DIRCTRL: record->fnlen: %u\n", (unsigned)fdient->FileNameLength);
 
 		if (!fdient->NextEntryOffset) break;
 		if (irpsp->Flags & SL_RETURN_SINGLE_ENTRY) break;
 	}
 
+	fprintf(stderr, "Records copied: %d\n", recordscopied);
+
 	// Buffer was too small to fit any entries:
 	// We are supposed to shove part of it in? I'm not sure
 	// how this should work; whatever:
 	if (!lastfdi) {
+		fprintf(stderr, "DIRECTORY_CONTROL: BUF TOO SMALL\n");
 		FUSENT_RESP resp;
 		fusent_fill_resp(&resp, ntreq->pirp, fop, 0);
 		resp.status = STATUS_BUFFER_OVERFLOW;
@@ -2494,10 +2518,12 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 	lastfdi->NextEntryOffset = 0;
 	
 	// Update directory "progress"
+	fprintf(stderr, "DIRCTL: Advance dir offset from %llu to %llu\n", dl->off, (uint64_t)(p - dl->listing));
 	dl->off = p - dl->listing;
 
 	// Reply with a big fat buf!
-	fusent_reply_read(req, ntreq->pirp, fop, o - outbuf, outbuf);
+	fprintf(stderr, "DIRCTL: Replying with a N-byte buf: %08x (header: %08x)\n", o - outbuf, sizeof(FUSENT_RESP));
+	fusent_reply_dirctrl(req, ntreq->pirp, fop, o - outbuf, outbuf);
 	free(outbuf);
 	return;
 
