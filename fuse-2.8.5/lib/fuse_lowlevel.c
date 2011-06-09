@@ -207,17 +207,20 @@ static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
 static void fusent_unixmode_to_winattr(mode_t m, ULONG *winattr)
 {
 	ULONG val = 0;
-	if (S_ISBLK(m) || S_ISCHR(m))
-		val |= FILE_ATTRIBUTE_DEVICE;
-	if (!(m & S_IWUSR || m & S_IWGRP || m & S_IWOTH))
-		val |= FILE_ATTRIBUTE_READONLY;
+	//if (S_ISBLK(m) || S_ISCHR(m))
+	//	val |= FILE_ATTRIBUTE_DEVICE;
+	//if (!(m & S_IWUSR || m & S_IWGRP || m & S_IWOTH))
+	//	val |= FILE_ATTRIBUTE_READONLY;
 	// I'm not sure we should claim a link is a reparse point:
 	//if (S_ISLNK(m))
 	//	val |= FILE_ATTRIBUTE_REPARSE_POINT;
-	if (S_ISREG(m))
-		val |= FILE_ATTRIBUTE_NORMAL;
+	if (S_ISDIR(m))
+		val |= FILE_ATTRIBUTE_DIRECTORY;
 	else
-		val |= FILE_ATTRIBUTE_SYSTEM;
+	//if (S_ISREG(m))
+		val |= FILE_ATTRIBUTE_NORMAL;
+	//else
+	//	val |= FILE_ATTRIBUTE_SYSTEM;
 
 	*winattr = val;
 }
