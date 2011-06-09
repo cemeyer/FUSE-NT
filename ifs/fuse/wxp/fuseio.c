@@ -508,6 +508,11 @@ FuseCopyResponse (
                                 UserspaceIrp->IoStatus.Status = STATUS_INVALID_BUFFER_SIZE;
                                 Status = STATUS_INVALID_BUFFER_SIZE;
                             }
+                        } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) {
+                            ULONG BufferLength = FuseNtResp->params.dirctrl.buflen;
+                            PFILE_DIRECTORY_INFORMATION DirectoryInformation = (PFILE_DIRECTORY_INFORMATION) (FuseNtResp + 1);
+
+                            Status = FuseCopyDirectoryControl(UserspaceIrp, DirectoryInformation, BufferLength);
                         }
                     }
 
@@ -925,7 +930,7 @@ FuseFsdDirectoryControl (
     DbgPrint("FuseFsdDirectoryControl called on '%wZ'\n", &IrpSp->FileObject->FileName);
 #endif
 
-    return FuseCopyDirectoryControl(Irp, NULL, 0);
+    return FuseAddUserspaceIrp(Irp, IrpSp);
 }
 
 NTSTATUS
