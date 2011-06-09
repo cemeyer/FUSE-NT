@@ -1,0 +1,5 @@
+TODO :-)
+
+Drop me an email / contact me on github if you're having trouble. The
+userspace libraries are expected to fail during 'make', somewhere around
+example/fioc.c. example/hello.exe *should* build.
