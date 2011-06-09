@@ -1,0 +1,13 @@
+The fuse-2.8.5/ subdirectory is licensed under the same terms as the original
+FUSE sources, which is some combination of GPLv2 and LGPLv2; any changes by
+us to the FUSE sources is licensed under the most permissive allowable
+license of {GPLv2+, LGPLv2+}.
+
+The ifs/ subdirectory is licensed under the terms of the MIT license, with
+the following exception:
+
+  hashmap.h and hashmap.c, which are under what appears to be a very
+  permissive license, are copyright 2009 Vedant Kumar <vminch@gmail.com>
+
+The texts of the MIT, LGPLv2, and GPLv2 licenses are included in MIT.txt,
+LGPLv2.txt, and GPLv2.txt (in the directory of this COPYING) respectively.
