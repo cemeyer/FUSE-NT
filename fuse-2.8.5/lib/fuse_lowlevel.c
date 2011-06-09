@@ -60,7 +60,8 @@ static st_table *fusent_fop_pos_map;
 static st_table *fusent_fop_sync_map;
 // Map to open directory listings; ghetto, but, whatever:
 typedef struct {
-	int64_t off, len;
+	int64_t off;
+	uint32_t len, singlefile;
 	char *listing;
 } FUSENT_DIRLISTING;
 static st_table *fusent_fop_dirlisting_map;
@@ -2393,6 +2394,7 @@ static int fusent_do_buffer_dirlisting(FUSENT_REQ *ntreq, EXTENDED_IO_STACK_LOCA
 	dl->off = 0;
 	dl->len = 0;
 	dl->listing = NULL;
+	dl->singlefile = 0;
 	if (lastfdi) {
 		lastfdi->NextEntryOffset = 0;
 		dl->len = ((char *)lastfdi->FileName) + lastfdi->FileNameLength - outbuf;
@@ -2496,7 +2498,11 @@ static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *io
 		fprintf(stderr, "  DIRCTRL: record->fnlen: %u\n", (unsigned)fdient->FileNameLength);
 
 		if (!fdient->NextEntryOffset) break;
-		if (irpsp->Flags & SL_RETURN_SINGLE_ENTRY) break;
+		if (irpsp->Flags & SL_RETURN_SINGLE_ENTRY) {
+			dl->singlefile = 1;
+			break;
+		}
+		if (dl->singlefile) break;
 	}
 
 	fprintf(stderr, "Records copied: %d\n", recordscopied);
