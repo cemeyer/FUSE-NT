@@ -1,6 +1,6 @@
 /*++
 
-Copyright (c) 1989-2000 Microsoft Corporation
+Copyright 2011 FUSE-NT authors
 
 Module Name:
 
