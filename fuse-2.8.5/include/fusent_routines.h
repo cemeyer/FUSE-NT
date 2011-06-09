@@ -1,3 +1,11 @@
+/*
+  FUSE-NT: Filesystem in Userspace (for Windows NT)
+  Copyright (C) 2011  The FUSE-NT Authors
+
+  This program can be distributed under the terms of the GNU LGPLv2.
+  See the file LGPLv2.txt.
+*/
+
 #ifdef __CYGWIN__
 #ifndef IRPDECODE_H
 #define IRPDECODE_H
