@@ -270,8 +270,44 @@ FuseCheckForWork (
                     FoundWork = TRUE;
                 }
 
+                //
+                //  If an IRP has been cancelled, remove it from the queue
+                //
+
+                if(UserspaceIrp->Cancel) {
+                    ModuleStruct->UserspaceIrpList = UserspaceIrpListEntry->Next;
+
+                    if(!ModuleStruct->UserspaceIrpList) {
+                        ModuleStruct->UserspaceIrpListEnd = NULL;
+                    }
+
+                    continue;
+                } else if(ModuleIrp->Cancel) {
+                    ModuleStruct->ModuleIrpList = ModuleIrpListEntry->Next;
+
+                    if(!ModuleStruct->ModuleIrpList) {
+                        ModuleStruct->ModuleIrpListEnd = NULL;
+                    }
+
+                    continue;
+                }
+
                 UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
                 ModuleIrpSp = IoGetCurrentIrpStackLocation(ModuleIrp);
+
+                //
+                //  UserspaceIrpSp was NULL for me once...not sure what's up with that
+                //
+
+                if(!UserspaceIrpSp) {
+                    ModuleStruct->UserspaceIrpList = UserspaceIrpListEntry->Next;
+
+                    if(!ModuleStruct->UserspaceIrpList) {
+                        ModuleStruct->UserspaceIrpListEnd = NULL;
+                    }
+
+                    continue;
+                }
 
                 FuseNtReq = (FUSENT_REQ*) ModuleIrp->AssociatedIrp.SystemBuffer;
 
@@ -367,8 +403,16 @@ FuseCheckForWork (
                     //  The buffer was too small; bail
                     //
 
-                    DbgPrint("Request larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
-                                ReqSize, ModuleIrpSp->Parameters.FileSystemControl.OutputBufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
+                    __try {
+                        DbgPrint("Request larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
+                                    ReqSize, ModuleIrpSp->Parameters.FileSystemControl.OutputBufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
+                    } __except(EXCEPTION_EXECUTE_HANDLER) {
+                        
+                        //
+                        //  I saw a segmentation fault caused by trying to read one of the above fields, so
+                        //  this should help protect against that
+                        //
+                    }
                 }
 
                 //
@@ -463,7 +507,23 @@ FuseCopyResponse (
 
                 if(MatchFound) {
 
-                    PIO_STACK_LOCATION UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
+                    PIO_STACK_LOCATION UserspaceIrpSp;
+
+                    //
+                    //  If the userspace IRP has since been cancelled, remove it from the queue
+                    //
+
+                    if(UserspaceIrp->Cancel) {
+                        ModuleStruct->OutstandingIrpList = CurrentEntry->Next;
+
+                        if(!ModuleStruct->OutstandingIrpList) {
+                            ModuleStruct->OutstandingIrpListEnd = NULL;
+                        }
+
+                        return STATUS_CANCELLED;
+                    }
+
+                    UserspaceIrpSp = IoGetCurrentIrpStackLocation(UserspaceIrp);
 
                     DbgPrint("Module %S: status is %x and error code is %x on file %S with major code %x\n",
                         ModuleStruct->ModuleName, FuseNtResp->status, -FuseNtResp->error, UserspaceIrpSp->FileObject->FileName.Buffer, UserspaceIrpSp->MajorFunction);

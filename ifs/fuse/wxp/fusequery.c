@@ -110,7 +110,7 @@ FuseCopyDirectoryControl (
             if(Length >= (LONG) DirInformationLength) {
                 RtlZeroMemory(DirInfo, DirInformationLength);
 
-                memcpy(DirInfo, ModuleDirInformation, sizeof(FILE_DIRECTORY_INFORMATION) - TruncateLength);
+                memcpy(DirInfo, ModuleDirInformation, sizeof(FILE_DIRECTORY_INFORMATION) - sizeof(WCHAR*) - TruncateLength);
                 memcpy(FileNameField, ModuleDirInformation->FileName, FileNameLength);
 
                 if(ShortNameField && ShortNameLengthField) {
