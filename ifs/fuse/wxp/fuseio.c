@@ -494,26 +494,28 @@ FuseCopyResponse (
                             }
                         } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_WRITE) {
                             UserspaceIrp->IoStatus.Information = FuseNtResp->params.write.written;
-                        } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_QUERY_INFORMATION) {
-                            ULONG BufferLength = FuseNtResp->params.query.buflen;
-                            FUSENT_FILE_INFORMATION* FileInformation = (FUSENT_FILE_INFORMATION*) (FuseNtResp + 1);
-
-                            if(BufferLength >= sizeof(FUSENT_FILE_INFORMATION)) {
-
-                                Status = FuseCopyInformation(UserspaceIrp, FileInformation, BufferLength);
-                            } else {
-                                DbgPrint("Query information buffer is not as large as expected. Expected: %d, given: %d for file %S\n",
-                                    sizeof(FUSENT_FILE_INFORMATION), BufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
-
-                                UserspaceIrp->IoStatus.Status = STATUS_INVALID_BUFFER_SIZE;
-                                Status = STATUS_INVALID_BUFFER_SIZE;
-                            }
-                        } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) {
-                            ULONG BufferLength = FuseNtResp->params.dirctrl.buflen;
-                            PFILE_DIRECTORY_INFORMATION DirectoryInformation = (PFILE_DIRECTORY_INFORMATION) (FuseNtResp + 1);
-
-                            Status = FuseCopyDirectoryControl(UserspaceIrp, DirectoryInformation, BufferLength);
                         }
+                    }
+
+                    if(UserspaceIrpSp->MajorFunction == IRP_MJ_QUERY_INFORMATION) {
+                        ULONG BufferLength = FuseNtResp->params.query.buflen;
+                        FUSENT_FILE_INFORMATION* FileInformation = (FUSENT_FILE_INFORMATION*) (FuseNtResp + 1);
+
+                        if(BufferLength >= sizeof(FUSENT_FILE_INFORMATION)) {
+
+                            Status = FuseCopyInformation(UserspaceIrp, FileInformation, BufferLength);
+                        } else {
+                            DbgPrint("Query information buffer is not as large as expected. Expected: %d, given: %d for file %S\n",
+                                sizeof(FUSENT_FILE_INFORMATION), BufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
+
+                            UserspaceIrp->IoStatus.Status = STATUS_INVALID_BUFFER_SIZE;
+                            Status = STATUS_INVALID_BUFFER_SIZE;
+                        }
+                    } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) {
+                        ULONG BufferLength = FuseNtResp->params.dirctrl.buflen;
+                        PFILE_DIRECTORY_INFORMATION DirectoryInformation = (PFILE_DIRECTORY_INFORMATION) (FuseNtResp + 1);
+
+                        Status = FuseCopyDirectoryControl(UserspaceIrp, DirectoryInformation, BufferLength);
                     }
 
                     IoCompleteRequest(UserspaceIrp, IO_NO_INCREMENT);
