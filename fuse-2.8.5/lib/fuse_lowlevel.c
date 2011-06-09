@@ -2124,6 +2124,11 @@ static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_
 		err = EBADF;
 		goto reply_err_nt;
 	}
+	if (!fi) {
+		err = EBADF;
+		fprintf(stderr, "READ: got fop without fi: %p\n", fop);
+		goto reply_err_nt;
+	}
 
 	uint64_t current_offset = fusent_get_file_offset(fop);
 
