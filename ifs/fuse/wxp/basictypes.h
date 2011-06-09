@@ -1,3 +1,17 @@
+/*++
+
+Copyright (c) 2011 FUSE-NT Authors
+
+Module Name:
+
+    basictypes.h
+
+Abstract:
+
+    This module defines some types for the FUSE filesystem driver
+
+--*/
+
 #ifndef __BASICTYPES
 #define __BASICTYPES
 

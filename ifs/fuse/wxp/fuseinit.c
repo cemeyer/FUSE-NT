@@ -1,10 +1,10 @@
 /*++
 
-Copyright 2011 FUSE-NT authors
+Copyright (c) 2011 FUSE-NT authors
 
 Module Name:
 
-    FuseInit.c
+    fuseinit.c
 
 Abstract:
 

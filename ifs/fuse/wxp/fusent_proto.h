@@ -1,3 +1,18 @@
+/*++
+
+Copyright (c) 2011 FUSE-NT Authors
+
+Module Name:
+
+    fusent_proto.h
+
+Abstract:
+
+    This module defines the common structs used to interact between userspace
+    and kernelspace.
+
+--*/
+
 #ifndef NTPROTO_H
 #define NTPROTO_H
 

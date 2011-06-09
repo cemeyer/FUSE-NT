@@ -1,10 +1,10 @@
 /*++
 
-Copyright (c) 2011 FoW Group
+Copyright (c) 2011 FUSE-NT Authors
 
 Module Name:
 
-    FuseIo.c
+    fuseio.c
 
 Abstract:
 

@@ -1,3 +1,13 @@
+/*++
+
+Copyright (c) 2011 FUSE-NT Authors
+
+Module Name:
+
+    fuse.rc
+
+--*/
+
 #include <windows.h>
 
 #include <ntverp.h>

@@ -1,3 +1,17 @@
+/*++
+
+Copyright (c) 2011 FUSE-NT Authors
+
+Module Name:
+
+    fusequery.c
+
+Abstract:
+
+    This module does some things :-)
+
+--*/
+
 #include <ntdef.h>
 #include <NtStatus.h>
 #include "fuseprocs.h"

@@ -1,12 +1,14 @@
 /*++
 
+Copyright (c) 2011 FUSE-NT Authors
+
 Module Name:
 
-    FuseUtil.c
+    fuseutil.c
 
 Abstract:
 
-    This module implements the utility routines for the FUSE driver.
+    This module implements some utility routines for the FUSE driver.
 
 --*/
 

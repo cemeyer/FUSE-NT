@@ -1,5 +1,7 @@
 /*++
 
+Copyright (c) 2011 FUSE-NT Authors
+
 Module Name:
 
     fuseutil.h

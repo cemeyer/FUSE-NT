@@ -4,12 +4,11 @@ Copyright 2011 FUSE-NT authors
 
 Module Name:
 
-    FuseProcs.h
+    fuseprocs.h
 
 Abstract:
 
     This module defines all of the globally used procedures in FUSE
-
 
 --*/
 

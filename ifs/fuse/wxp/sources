@@ -5,9 +5,9 @@ DRIVERTYPE=FS
 
 MSC_WARNING_LEVEL=/W3 /WX
 
-SOURCES=Fuse.rc     \
-        FuseInit.c  \
-        FuseIo.c    \
-        HashMap.c   \
-        FuseQuery.c \
-        FuseUtil.c
+SOURCES=fuse.rc     \
+        fuseinit.c  \
+        fuseio.c    \
+        hashmap.c   \
+        fusequery.c \
+        fuseutil.c
