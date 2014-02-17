@@ -1,23 +1,8 @@
-/*++
+#ifndef FUSEUTIL_H_
+#define FUSEUTIL_H_
 
-Copyright (c) 2011 FUSE-NT Authors
-
-Module Name:
-
-    fuseutil.h
-
-Abstract:
-
-    This module defines the utility functions used by the FUSE driver.
-*/
-
-#include <ntdef.h>
-#include <ntifs.h>
-#include <NtStatus.h>
-
-//
-//  Module name extraction
-//
+#define M_FUSE \
+    (((ULONG)'F' << 24) | ((ULONG)'u' << 16) | ((ULONG)'s' << 8) | (ULONG)'e')
 
 LPWSTR
 FuseExtractModuleName (
@@ -54,3 +39,19 @@ FuseLockUserBuffer (
     IN ULONG BufferLength
     );
 
+/*
+ * Simple wrapper for Ex*FastMutex since GCC doesn't support SEH __finally
+ * extensions.
+ */
+class ScopedExLock {
+	PFAST_MUTEX m_;
+public:
+	ScopedExLock(PFAST_MUTEX m): m_(m) {
+		ExAcquireFastMutex(m_);
+	}
+	~ScopedExLock() {
+		ExReleaseFastMutex(m_);
+	}
+};
+
+#endif

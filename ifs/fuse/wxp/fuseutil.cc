@@ -1,20 +1,4 @@
-/*++
-
-Copyright (c) 2011 FUSE-NT Authors
-
-Module Name:
-
-    fuseutil.c
-
-Abstract:
-
-    This module implements some utility routines for the FUSE driver.
-
---*/
-
-#include <ntdef.h>
-#include <NtStatus.h>
-#include "fuseutil.h"
+#include "fuse_includes.h"
 
 LPWSTR
 FuseExtractModuleName (
@@ -56,7 +40,7 @@ FuseAllocateModuleName (
     ULONG ModuleNameLength;
 
     ModuleNamePointer = FuseExtractModuleName(Irp, &ModuleNameLength);
-    ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1), 'esuF');
+    ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, sizeof(WCHAR) * (ModuleNameLength + 1), M_FUSE);
 
     memcpy(ModuleName, ModuleNamePointer, sizeof(WCHAR) * ModuleNameLength);
     ModuleName[ModuleNameLength] = L'\0';
@@ -268,13 +252,10 @@ Return Value:
         //
 
         try {
-
             MmProbeAndLockPages( Mdl,
                                  Irp->RequestorMode,
                                  Operation );
-
-        } except(EXCEPTION_EXECUTE_HANDLER) {
-
+        } catch (...) {
             IoFreeMdl( Mdl );
             Irp->MdlAddress = NULL;
         }

@@ -16,7 +16,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "hashmap.h"
+#include "fuse_includes.h"
 
 // hashmaps need a hash function, an equality function, and a destructor
 VOID mk_hmap(hashmap* hmap, uint32_t (*hash_fn)(key),
@@ -27,7 +27,7 @@ VOID mk_hmap(hashmap* hmap, uint32_t (*hash_fn)(key),
 				) {
 					
     
-	hmap->map = (key_val_pair*) ExAllocatePoolWithTag(PagedPool, HMAP_PAGE_SIZE, 'esuF');
+	hmap->map = (key_val_pair*) ExAllocatePoolWithTag(PagedPool, HMAP_PAGE_SIZE, M_FUSE);
     RtlZeroMemory(hmap->map, HMAP_PAGE_SIZE);
 	hmap->size = 0;
 	hmap->capacity = HMAP_PRESET_SIZE;
@@ -123,7 +123,7 @@ val __hmap_get(hashmap* hmap, key in) {
 	static uint32_t hash;
     
     hash = __oa_get_location(hmap, in);
-    if(hash != -1) {
+    if(hash != (uint32_t)-1) {
         return hmap->map[hash].v;
     } else {
         return NULL;
@@ -134,7 +134,7 @@ BOOLEAN __hmap_remove(hashmap* hmap, key in) {
     static uint32_t hash;
     
     hash = __oa_get_location(hmap, in);
-    if(hash != -1 && hmap->map[hash].v) {
+    if(hash != (uint32_t)-1 && hmap->map[hash].v) {
         hmap->del_fn(hmap->map[hash].v);
         hmap->map[hash].k = NULL;
 

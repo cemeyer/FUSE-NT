@@ -1,70 +1,30 @@
-/*++
-
-Copyright (c) 2011 FUSE-NT authors
-
-Module Name:
-
-    fuseinit.c
-
-Abstract:
-
-    This module implements the DRIVER_INITIALIZATION routine for FUSE
-
---*/
-
-#include <ntifs.h>
-#include <ntddcdrm.h>
-#include <ntdddisk.h>
-#include <ntddstor.h>
-
-#include "fuseprocs.h"
-
+#include "fuse_includes.h"
 
 PDEVICE_OBJECT FuseFileSystemDeviceObject;
 
 FAST_IO_DISPATCH FuseFastIoDispatch;
 
+extern "C" {
+
+__attribute__ ((visibility("default")))
 NTSTATUS
 DriverEntry(
     IN PDRIVER_OBJECT DriverObject,
     IN PUNICODE_STRING RegistryPath
     );
 
+}
+
 DRIVER_UNLOAD FuseUnload;
 
-
 NTSTATUS
 DriverEntry(
     IN PDRIVER_OBJECT DriverObject,
     IN PUNICODE_STRING RegistryPath
     )
-
-/*++
-
-Routine Description:
-
-    This is the initialization routine for the FUSE file system
-    device driver.  This routine creates the device object for the FileSystem
-    device and performs all other driver initialization.
-
-Arguments:
-
-    DriverObject - Pointer to driver object created by the system.
-
-Return Value:
-
-    NTSTATUS - The function value is the final status from the initialization
-        operation.
-
---*/
-
 {
-    USHORT MaxDepth;
     NTSTATUS Status;
     UNICODE_STRING UnicodeString;
-
-    UNICODE_STRING ValueName;
-    ULONG Value;
 
     //
     // Create the device object for disks.  To avoid problems with filters who

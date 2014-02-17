@@ -1,31 +1,7 @@
-/*++
-
-Copyright 2011 FUSE-NT authors
-
-Module Name:
-
-    fuseprocs.h
-
-Abstract:
-
-    This module defines all of the globally used procedures in FUSE
-
---*/
-
 #ifndef _FUSEPROCS_
 #define _FUSEPROCS_
 
-#include <ntifs.h>
-#include <ntddcdrm.h>
-#include <ntdddisk.h>
-#include <ntddstor.h>
-
-#include "hashmap.h"
-#include "fusent_proto.h"
-
-#ifndef INLINE
-#define INLINE __inline
-#endif
+typedef struct _hashmap hashmap;
 
 extern hashmap ModuleMap;
 extern hashmap UserspaceMap;
@@ -214,5 +190,4 @@ FuseQueryFsFullSizeInfo (
     );
 
 #endif // _FUSEPROCS_
-
 

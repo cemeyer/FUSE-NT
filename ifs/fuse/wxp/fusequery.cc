@@ -1,23 +1,4 @@
-/*++
-
-Copyright (c) 2011 FUSE-NT Authors
-
-Module Name:
-
-    fusequery.c
-
-Abstract:
-
-    This module does some things :-)
-
---*/
-
-#include <ntdef.h>
-#include <NtStatus.h>
-#include "fuseprocs.h"
-#include "hashmap.h"
-#include "fusent_proto.h"
-#include "fuseutil.h"
+#include "fuse_includes.h"
 
 NTSTATUS
 FuseCopyDirectoryControl (
@@ -70,10 +51,10 @@ FuseCopyDirectoryControl (
             Length >= (LONG) (sizeof(FILE_DIRECTORY_INFORMATION) + ModuleDirInformation->FileNameLength - TruncateLength + sizeof(LONGLONG))) {
 
             ULONG FileNameLength = ModuleDirInformation->FileNameLength;
-            WCHAR* FileNameField;
+            WCHAR* FileNameField = NULL;
             WCHAR* ShortNameField = NULL;
             PCCHAR ShortNameLengthField = NULL;
-            ULONG DirInformationLength;
+            ULONG DirInformationLength = (ULONG)-1;
 
             if(FileInformationClass == FileDirectoryInformation) {
 
@@ -108,6 +89,8 @@ FuseCopyDirectoryControl (
                 ShortNameField = IdBothInformation->ShortName;
                 ShortNameLengthField = &IdBothInformation->ShortNameLength;
             }
+
+            ASSERT(DirInformationLength != (ULONG)-1);
                 
             DirInformationLength += FileNameLength - sizeof(WCHAR) - TruncateLength;
 
@@ -125,6 +108,7 @@ FuseCopyDirectoryControl (
                 RtlZeroMemory(DirInfo, DirInformationLength);
 
                 memcpy(DirInfo, ModuleDirInformation, sizeof(FILE_DIRECTORY_INFORMATION) - sizeof(WCHAR*) - TruncateLength);
+                ASSERT(FileNameField);
                 memcpy(FileNameField, ModuleDirInformation->FileName, FileNameLength);
 
                 if(ShortNameField && ShortNameLengthField) {
@@ -213,8 +197,6 @@ FuseCopyInformation (
     LONG Length;
     FILE_INFORMATION_CLASS FileInformationClass;
     PFILE_ALL_INFORMATION AllInfo;
-    LARGE_INTEGER Time;
-    LARGE_INTEGER FileSize;
     
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -327,7 +309,6 @@ FuseQueryStandardInfo (
 {
     NTSTATUS Status = STATUS_SUCCESS;
     LONG InformationLength = sizeof(FILE_STANDARD_INFORMATION);
-    LARGE_INTEGER FileSize;
 
 #ifdef FUSE_DEBUG1
     DbgPrint("FuseQueryStandardInfo\n");
@@ -343,8 +324,6 @@ FuseQueryStandardInfo (
     } else {
 
         RtlZeroMemory(Buffer, InformationLength);
-
-        FileSize.QuadPart = 0;
 
         // the size of the file as allocated on disk--for us this will just be the file size
         Buffer->AllocationSize = ModuleFileInformation->AllocationSize;
@@ -411,8 +390,6 @@ FuseCopyVolumeInformation (
     LONG Length;
     FS_INFORMATION_CLASS FsInformationClass;
     PVOID Buffer;
-    ULONG VolumeLabelLength;
-    LARGE_INTEGER Time;
 
     //
     //  Get the current stack location
@@ -482,7 +459,6 @@ FuseQueryFsVolumeInfo (
     NTSTATUS Status = STATUS_SUCCESS;
     LONG InformationLength;
     LARGE_INTEGER Time;
-    WCHAR* VolumeLabel;
     ULONG VolumeLabelLength;
 
 #ifdef FUSE_DEBUG1

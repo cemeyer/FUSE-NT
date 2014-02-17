@@ -1,23 +1,4 @@
-/*++
-
-Copyright (c) 2011 FUSE-NT Authors
-
-Module Name:
-
-    fuseio.c
-
-Abstract:
-
-    This module implements the main routines for the FUSE filesystem driver
-
---*/
-
-#include <ntdef.h>
-#include <NtStatus.h>
-#include "fuseprocs.h"
-#include "fusent_proto.h"
-#include "hashmap.h"
-#include "fuseutil.h"
+#include "fuse_includes.h"
 
 NTSTATUS
 FuseAddUserspaceIrp (
@@ -66,8 +47,10 @@ FuseAddUserspaceIrp (
 
 {
     NTSTATUS Status = STATUS_SUCCESS;
-    WCHAR* FileName = IrpSp->FileObject->FileName.Buffer + 1;
     PUNICODE_STRING FileNameString = &IrpSp->FileObject->FileName;
+#ifdef FUSE_DEBUG0
+    WCHAR* FileName = FileNameString->Buffer + 1;
+#endif
     WCHAR* ModuleName;
     PMODULE_STRUCT ModuleStruct;
 
@@ -81,8 +64,7 @@ FuseAddUserspaceIrp (
     //
 
     if (FileNameString->Length > 0) {
-
-        WCHAR* ModuleName = FuseAllocateModuleName(Irp);
+        ModuleName = FuseAllocateModuleName(Irp);
 
 #ifdef FUSE_DEBUG0
         DbgPrint("Parsed module name for userspace request is %S\n", ModuleName);
@@ -95,8 +77,6 @@ FuseAddUserspaceIrp (
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
             Status = STATUS_SUCCESS;
         } else {
-            BOOLEAN IrpCompleted;
-
 #ifdef FUSE_DEBUG0
             DbgPrint("Found entry in map for module %S. Adding userspace IRP to module queue\n", ModuleName);
 #endif
@@ -141,8 +121,6 @@ FuseAddIrpToModuleList (
         ULONG ExpectedBufferLength;
         PIO_STACK_LOCATION ModuleIrpSp = IoGetCurrentIrpStackLocation(Irp);
             
-        PWSTR ModuleName = ModuleStruct->ModuleName;
-        ULONG FileNameLength = (wcslen(ModuleName) + 1) * sizeof(WCHAR);
         ULONG StackLength = Irp->StackCount * sizeof(IO_STACK_LOCATION);
         ExpectedBufferLength = sizeof(FUSENT_REQ) + StackLength;
 
@@ -159,13 +137,8 @@ FuseAddIrpToModuleList (
         }
     }
 
-    //
-    //  Acquire the lock for the module struct
-    //
-
-    ExAcquireFastMutex(&ModuleStruct->ModuleLock);
-
-    __try {
+    {
+        ScopedExLock(&ModuleStruct->ModuleLock);
         //
         //  Add to the list specified by Module--TRUE -> module list, FALSE -> userspace list
         //
@@ -178,10 +151,10 @@ FuseAddIrpToModuleList (
             //
 
             if(AddToModuleList) {
-                ModuleStruct->ModuleIrpList = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), 'esuF');
+                ModuleStruct->ModuleIrpList = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), M_FUSE);
                 LastEntry = ModuleStruct->ModuleIrpList;
             } else {
-                ModuleStruct->UserspaceIrpList = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), 'esuF');
+                ModuleStruct->UserspaceIrpList = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), M_FUSE);
                 LastEntry = ModuleStruct->UserspaceIrpList;
             }
         } else {
@@ -190,7 +163,7 @@ FuseAddIrpToModuleList (
             //  Insert the new entry at the end of the list
             //
 
-            LastEntry->Next = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), 'esuF');
+            LastEntry->Next = (PIRP_LIST) ExAllocatePoolWithTag(PagedPool, sizeof(IRP_LIST), M_FUSE);
             LastEntry = LastEntry->Next;
         }
 
@@ -206,8 +179,6 @@ FuseAddIrpToModuleList (
         } else {
             ModuleStruct->UserspaceIrpListEnd = LastEntry;
         }
-    } __finally {
-        ExReleaseFastMutex(&ModuleStruct->ModuleLock);
     }
 
 #ifdef FUSE_DEBUG0
@@ -239,9 +210,8 @@ FuseCheckForWork (
 
     if(ModuleStruct->ModuleIrpList && ModuleStruct->UserspaceIrpList) {
 
-        ExAcquireFastMutex(&ModuleStruct->ModuleLock);
-
-        __try {
+        {
+            ScopedExLock(&ModuleStruct->ModuleLock);
 
             //
             //  Perform the check again now that we have the lock
@@ -255,15 +225,15 @@ FuseCheckForWork (
                 PIO_STACK_LOCATION UserspaceIrpSp;
                 PIO_STACK_LOCATION ModuleIrpSp;
                 FUSENT_REQ* FuseNtReq;
-                WCHAR* FileName;
-                ULONG FileNameLength;
+                WCHAR* FileName = NULL;
+                ULONG FileNameLength = (ULONG)-1;
                 ULONG ReqSize;
 
-                PWSTR ModuleName = ModuleStruct->ModuleName;
                 ULONG StackLength = UserspaceIrp->StackCount * sizeof(IO_STACK_LOCATION);
 
 #ifdef FUSE_DEBUG0
-                DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n", ModuleName);
+                DbgPrint("Work found for module %S. Pairing userspace request with module request for work\n",
+                    ModuleStruct->ModuleName);
 #endif
 
                 if(ModuleIrp == InFlightModuleIrp) {
@@ -353,8 +323,10 @@ FuseCheckForWork (
                 
                     if(UserspaceIrpSp->MajorFunction == IRP_MJ_CREATE) {
                         PULONG FileNameLengthField = (PULONG) (((PCHAR) FuseNtReq->iostack) + StackLength);
-                        *FileNameLengthField = FileNameLength;
 
+                        ASSERT(FileNameLength != (ULONG)-1 && FileName);
+
+                        *FileNameLengthField = FileNameLength;
                         memcpy(FileNameLengthField + 1, FileName, FileNameLength);
 
                     } else if(UserspaceIrpSp->MajorFunction == IRP_MJ_WRITE) {
@@ -403,6 +375,7 @@ FuseCheckForWork (
                     //  The buffer was too small; bail
                     //
 
+#if 0
                     __try {
                         DbgPrint("Request larger than provided buffer. Expected size: %d, actual size: %d for file %S\n",
                                     ReqSize, ModuleIrpSp->Parameters.FileSystemControl.OutputBufferLength, UserspaceIrpSp->FileObject->FileName.Buffer);
@@ -413,6 +386,7 @@ FuseCheckForWork (
                         //  this should help protect against that
                         //
                     }
+#endif
                 }
 
                 //
@@ -442,8 +416,6 @@ FuseCheckForWork (
 
                 IoCompleteRequest(ModuleIrp, IO_NO_INCREMENT);
             }
-        } __finally {
-            ExReleaseFastMutex(&ModuleStruct->ModuleLock);
         }
     }
 
@@ -479,9 +451,9 @@ FuseCopyResponse (
         //  is valid. A list of outstanding userspace IRPs is maintained for this purpose
         //
 
-        ExAcquireFastMutex(&ModuleStruct->ModuleLock);
+        {
+            ScopedExLock(&ModuleStruct->ModuleLock);
 
-        __try {
             PIRP_LIST CurrentEntry = ModuleStruct->OutstandingIrpList;
             PIRP_LIST PreviousEntry = NULL;
             if(!CurrentEntry) {
@@ -611,8 +583,6 @@ FuseCopyResponse (
                     Status = STATUS_INVALID_DEVICE_REQUEST;
                 }
             }
-        } __finally {
-            ExReleaseFastMutex(&ModuleStruct->ModuleLock);
         }
 
     } else {
@@ -712,7 +682,7 @@ FuseFsdFileSystemControl (
         //  module hash map
         //
 
-        ModuleStruct = (PMODULE_STRUCT) ExAllocatePoolWithTag(PagedPool, sizeof(MODULE_STRUCT), 'esuF');
+        ModuleStruct = (PMODULE_STRUCT) ExAllocatePoolWithTag(PagedPool, sizeof(MODULE_STRUCT), M_FUSE);
         RtlZeroMemory(ModuleStruct, sizeof(MODULE_STRUCT));
         ExInitializeFastMutex(&ModuleStruct->ModuleLock);
 
@@ -723,7 +693,7 @@ FuseFsdFileSystemControl (
         //
 
         ModuleStruct->ModuleFileObject = IrpSp->FileObject;
-        ModuleStruct->ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, ModuleNameLength + sizeof(WCHAR), 'esuF');
+        ModuleStruct->ModuleName = (WCHAR*) ExAllocatePoolWithTag(PagedPool, ModuleNameLength + sizeof(WCHAR), M_FUSE);
         memcpy(ModuleStruct->ModuleName, ModuleName, ModuleNameLength);
         ModuleStruct->ModuleName[ModuleNameLength] = L'\0';
         hmap_add(&ModuleMap, ModuleStruct->ModuleName, ModuleStruct);
@@ -824,10 +794,10 @@ FuseFsdCleanup (
     IN PIRP Irp
     )
 {
+#ifdef FUSE_DEBUG1
     PIO_STACK_LOCATION IrpSp;
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-#ifdef FUSE_DEBUG1
     DbgPrint("FuseFsdCleanup called on '%wZ'\n", &IrpSp->FileObject->FileName);
 #endif
 
@@ -1040,9 +1010,9 @@ FuseFsdQueryVolumeInformation (
     IN PIRP Irp
     )
 {
+#ifdef FUSE_DEBUG1
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-#ifdef FUSE_DEBUG1
     DbgPrint("FuseFsdQueryVolumeInformatiom called on '%wZ'\n", &IrpSp->FileObject->FileName);
 #endif
 
