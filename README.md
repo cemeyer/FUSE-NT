@@ -10,13 +10,27 @@ latest version of the libfuse API to run unmodified on Cygwin on Windows
 systems.
 
 
-Who are we?
-===========
+Building: IFS driver
+====================
 
-We (the FUSE-NT Authors) are Robert Bart, Elliott Brossard, Conrad Meyer, and
-Tim Vega. We are (at the time of this writing) undergrads in Computer Science
-and Computer Engineering at the University of Washington. If you want to
-contact us, you can email me <cemeyer [at] cs.washington.edu>.
+On Fedora 20, with the mingw64-headers and other mingw64 packages installed:
+
+    $ cd ifs/fuse/wxp
+    $ mingw64-env
+    $ make
+
+Will build a kernel module named `ntfuse.sys`.
+
+
+Building: FUSE
+==============
+
+Work in progress ... this is the idea:
+
+    $ cd fuse-*
+    $ mingw64-env
+    $ ./configure --target=x86_64-w64-mingw32
+    $ make
 
 
 Errata
