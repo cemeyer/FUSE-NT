@@ -2,7 +2,7 @@ Index: fuse-2.8.5/example/hello.c
 ===================================================================
 --- fuse-2.8.5.orig/example/hello.c
 +++ fuse-2.8.5/example/hello.c
-@@ -1,91 +1,114 @@
+@@ -1,91 +1,119 @@
  /*
    FUSE: Filesystem in Userspace
    Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -13,6 +13,10 @@ Index: fuse-2.8.5/example/hello.c
    gcc -Wall `pkg-config fuse --cflags --libs` hello.c -o hello
  */
  
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++#endif
++
  #define FUSE_USE_VERSION 26
  
  #include <fuse.h>
@@ -83,7 +87,7 @@ Index: fuse-2.8.5/example/hello.c
 -	if (strcmp(path, hello_path) != 0)
 +	fprintf(stderr, "hello.c: hello_open `%s'\n", path);
 +	if (strcmp(path, hello_path) != 0) {
-+		fprintf(stderr, "hello.c: hello_open: (%d)`%s' != (%d)`%s'\n", strlen(path), path, strlen(hello_path), hello_path);
++		fprintf(stderr, "hello.c: hello_open: (%zu)`%s' != (%zu)`%s'\n", strlen(path), path, strlen(hello_path), hello_path);
  		return -ENOENT;
 +	}
  
@@ -98,7 +102,8 @@ Index: fuse-2.8.5/example/hello.c
  {
  	size_t len;
  	(void) fi;
-+	fprintf(stderr, "hello.c: hello_read `%s' (off: %ld, len: %ld)\n", path, offset, size);
++	fprintf(stderr, "hello.c: hello_read `%s' (off: %ju, len: %zu)\n",
++	    path, (uintmax_t)offset, size);
  	if(strcmp(path, hello_path) != 0)
  		return -ENOENT;
  
@@ -291,87 +296,6 @@ Index: fuse-2.8.5/fakekern/Makefile
 +
 +fuseclient.o: fuseclient.c
 +	$(CC) $(CFLAGS) fuseclient.c
-Index: fuse-2.8.5/include/config.h.in
-===================================================================
---- fuse-2.8.5.orig/include/config.h.in
-+++ fuse-2.8.5/include/config.h.in
-@@ -16,71 +16,74 @@
- #undef HAVE_INTTYPES_H
- 
- /* Define to 1 if you have the <memory.h> header file. */
- #undef HAVE_MEMORY_H
- 
- /* Define to 1 if you have the `setxattr' function. */
- #undef HAVE_SETXATTR
- 
- /* Define to 1 if you have the <stdint.h> header file. */
- #undef HAVE_STDINT_H
- 
- /* Define to 1 if you have the <stdlib.h> header file. */
- #undef HAVE_STDLIB_H
- 
- /* Define to 1 if you have the <strings.h> header file. */
- #undef HAVE_STRINGS_H
- 
- /* Define to 1 if you have the <string.h> header file. */
- #undef HAVE_STRING_H
- 
--/* Define to 1 if `st_atim' is member of `struct stat'. */
-+/* Define to 1 if `st_atim' is a member of `struct stat'. */
- #undef HAVE_STRUCT_STAT_ST_ATIM
- 
--/* Define to 1 if `st_atimespec' is member of `struct stat'. */
-+/* Define to 1 if `st_atimespec' is a member of `struct stat'. */
- #undef HAVE_STRUCT_STAT_ST_ATIMESPEC
- 
- /* Define to 1 if you have the <sys/stat.h> header file. */
- #undef HAVE_SYS_STAT_H
- 
- /* Define to 1 if you have the <sys/types.h> header file. */
- #undef HAVE_SYS_TYPES_H
- 
- /* Define to 1 if you have the <unistd.h> header file. */
- #undef HAVE_UNISTD_H
- 
- /* Define as const if the declaration of iconv() needs const. */
- #undef ICONV_CONST
- 
- /* Don't update /etc/mtab */
- #undef IGNORE_MTAB
- 
- /* Define to the sub-directory in which libtool stores uninstalled libraries.
-    */
- #undef LT_OBJDIR
- 
- /* Define to 1 if your C compiler doesn't accept -c and -o together. */
- #undef NO_MINUS_C_MINUS_O
- 
- /* Name of package */
- #undef PACKAGE
- 
- /* Define to the address where bug reports for this package should be sent. */
- #undef PACKAGE_BUGREPORT
- 
- /* Define to the full name of this package. */
- #undef PACKAGE_NAME
- 
- /* Define to the full name and version of this package. */
- #undef PACKAGE_STRING
- 
- /* Define to the one symbol short name of this package. */
- #undef PACKAGE_TARNAME
- 
-+/* Define to the home page for this package. */
-+#undef PACKAGE_URL
-+
- /* Define to the version of this package. */
- #undef PACKAGE_VERSION
- 
- /* Define to 1 if you have the ANSI C header files. */
- #undef STDC_HEADERS
- 
- /* Version number of package */
- #undef VERSION
 Index: fuse-2.8.5/include/fuse_lowlevel_compat.h
 ===================================================================
 --- fuse-2.8.5.orig/include/fuse_lowlevel_compat.h
@@ -508,7 +432,10 @@ Index: fuse-2.8.5/include/fuse_lowlevel.h
 ===================================================================
 --- fuse-2.8.5.orig/include/fuse_lowlevel.h
 +++ fuse-2.8.5/include/fuse_lowlevel.h
-@@ -15,40 +15,44 @@
+@@ -12,42 +12,51 @@
+ /** @file
+  *
+  * Low level API
   *
   * IMPORTANT: you should define FUSE_USE_VERSION before including this
   * header.  To use the newest API define it to 26 (recommended for any
@@ -526,13 +453,20 @@ Index: fuse-2.8.5/include/fuse_lowlevel.h
  #include <fcntl.h>
  #include <sys/types.h>
  #include <sys/stat.h>
- #include <sys/statvfs.h>
- #include <sys/uio.h>
- 
-+#ifdef _WIN32
-+# include <windows.h>
-+#endif
+-#include <sys/statvfs.h>
+-#include <sys/uio.h>
 +
++#ifdef _WIN32
++typedef void* HANDLE;
++struct iovec {
++	void	*iov_base;
++	size_t	 iov_len;
++};
++#else
++# include <sys/statvfs.h>
++# include <sys/uio.h>
++#endif
+ 
  #ifdef __cplusplus
  extern "C" {
  #endif
@@ -552,8 +486,7 @@ Index: fuse-2.8.5/include/fuse_lowlevel.h
  
  /**
   * Session
-  *
-@@ -1463,50 +1467,60 @@ struct fuse_chan_ops {
+@@ -1463,50 +1472,60 @@ struct fuse_chan_ops {
  	int (*send)(struct fuse_chan *ch, const struct iovec iov[],
  		    size_t count);
  
@@ -620,7 +553,7 @@ Index: fuse-2.8.5/include/fusent_proto.h
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/include/fusent_proto.h
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,139 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
 +  Copyright (C) 2011  The FUSE-NT Authors
@@ -635,19 +568,14 @@ Index: fuse-2.8.5/include/fusent_proto.h
 +
 +// Protocol structs, shared types, etc.
 +
-+// Why don't any of the windows headers include the headers they depend on
-+// to define types (ULONG, NTSTATUS, CSHORT, WCHAR, ...)? Retarded.
-+//
-+// Why don't they just use the standard types (uint32_t, ...)?!?
-+#define NTOSAPI /**/
-+#define DDKAPI /**/
-+#include <windef.h>
-+#include <winnt.h>
-+#include <ntdef.h>
-+#include <ddk/ntddk.h>
-+#include <ddk/winddk.h>
 +#include <stdint.h>
++
++#if 0
++// Users, include these:
++#define __INTERLOCKED_DECLARED 1
++#include <ddk/ntddk.h>
 +#include <ddk/ntifs.h>
++#endif
 +
 +//
 +//  NtFsControlFile FSCTL codes. These functions codes are chosen to be
@@ -769,7 +697,7 @@ Index: fuse-2.8.5/include/fusent_routines.h
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/include/fusent_routines.h
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,36 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
 +  Copyright (C) 2011  The FUSE-NT Authors
@@ -782,16 +710,8 @@ Index: fuse-2.8.5/include/fusent_routines.h
 +#ifndef IRPDECODE_H
 +#define IRPDECODE_H
 +
-+// Windows headers don't pull in their own dependencies... see fusent_proto.h:
-+#define NTOSAPI /**/
-+#ifndef DDKAPI
-+# define DDKAPI /**/
-+#endif
-+#include <windef.h>
-+#include <winnt.h>
-+#include <ntdef.h>
-+#include <ddk/ntddk.h>
-+#include <ddk/winddk.h>
++#include <wdm.h>
++
 +#include <stdint.h>
 +#include <time.h>
 +
@@ -818,7 +738,7 @@ Index: fuse-2.8.5/include/fusent_translate.h
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/include/fusent_translate.h
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,21 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
 +  Copyright (C) 2011  The FUSE-NT Authors
@@ -830,8 +750,6 @@ Index: fuse-2.8.5/include/fusent_translate.h
 +#ifdef _WIN32
 +#ifndef FUSENT_TRANSLATE_H
 +#define FUSENT_TRANSLATE_H
-+
-+#include "fusent_proto.h"
 +
 +// Sets up any data structures fusent_translate will need to persist
 +// across calls.
@@ -846,7 +764,7 @@ Index: fuse-2.8.5/include/st.h
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/include/st.h
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,131 @@
 +/* This is a public domain general purpose hash table package written by Peter Moore @ UCB. */
 +
 +/* @(#) st.h 5.1 89/12/14 */
@@ -871,6 +789,14 @@ Index: fuse-2.8.5/include/st.h
 +
 +typedef uintptr_t st_data_t;
 +#define ST_DATA_T_DEFINED
++#ifdef __x86_64__
++# define SIZEOF_ST_INDEX_T 8
++#elif __i386__
++# define SIZEOF_ST_INDEX_T 4
++#else
++# error st SUCKS and I promise to replace it as soon as possible
++#endif
++
 +
 +#ifndef CHAR_BIT
 +# define CHAR_BIT 8
@@ -889,6 +815,7 @@ Index: fuse-2.8.5/include/st.h
 +typedef struct st_table st_table;
 +
 +typedef st_data_t st_index_t;
++
 +typedef int st_compare_func(st_data_t, st_data_t);
 +typedef st_index_t st_hash_func(st_data_t);
 +
@@ -9900,7 +9827,7 @@ Index: fuse-2.8.5/lib/cuse_lowlevel.c
    See the file COPYING.LIB.
  */
  
-+#ifndef __CYGWIN__
++#ifndef _WIN32
 +
  #include "cuse_lowlevel.h"
  #include "fuse_kernel.h"
@@ -9949,7 +9876,28 @@ Index: fuse-2.8.5/lib/fuse.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/fuse.c
 +++ fuse-2.8.5/lib/fuse.c
-@@ -16,40 +16,41 @@
+@@ -1,61 +1,78 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB
+ */
+ 
+ 
+ /* For pthread_rwlock_t */
+ #define _GNU_SOURCE
+ 
++/* Begin Fuse-NT */
++#define __USE_MINGW_ANSI_STDIO 1
++
++#include <pthread.h>
++/* End Fuse-NT */
++
+ #include "fuse_i.h"
+ #include "fuse_lowlevel.h"
+ #include "fuse_opt.h"
  #include "fuse_misc.h"
  #include "fuse_common_compat.h"
  #include "fuse_compat.h"
@@ -9965,18 +9913,32 @@ Index: fuse-2.8.5/lib/fuse.c
  #include <limits.h>
  #include <errno.h>
  #include <signal.h>
- #include <dlfcn.h>
+-#include <dlfcn.h>
++#ifndef _WIN32  /* Fuse-NT */
++# include <dlfcn.h>
++#endif
  #include <assert.h>
  #include <sys/param.h>
- #include <sys/uio.h>
+-#include <sys/uio.h>
++/* Begin Fuse-NT */
++#ifndef _WIN32
++# include <sys/uio.h>
++# define FUSE_DEFAULT_INTR_SIGNAL SIGUSR1
++#endif
++/* End Fuse-NT */
  #include <sys/time.h>
-+#include <Windows.h>
  
- #define FUSE_DEFAULT_INTR_SIGNAL SIGUSR1
- 
+-#define FUSE_DEFAULT_INTR_SIGNAL SIGUSR1
+-
  #define FUSE_UNKNOWN_INO 0xffffffff
  #define OFFSET_MAX 0x7fffffffffffffffLL
  
++/* Begin Fuse-NT */
++#ifdef ftruncate
++# undef ftruncate
++#endif
++/* End Fuse-NT */
++
  struct fuse_config {
  	unsigned int uid;
  	unsigned int gid;
@@ -9991,7 +9953,721 @@ Index: fuse-2.8.5/lib/fuse.c
  	int hard_remove;
  	int use_ino;
  	int readdir_ino;
-@@ -3855,66 +3856,68 @@ void fuse_destroy(struct fuse *f)
+ 	int set_mode;
+ 	int set_uid;
+ 	int set_gid;
+ 	int direct_io;
+ 	int kernel_cache;
+ 	int auto_cache;
+@@ -145,40 +162,42 @@ struct fuse_dh {
+ 	fuse_ino_t nodeid;
+ };
+ 
+ /* old dir handle */
+ struct fuse_dirhandle {
+ 	fuse_fill_dir_t filler;
+ 	void *buf;
+ };
+ 
+ struct fuse_context_i {
+ 	struct fuse_context ctx;
+ 	fuse_req_t req;
+ };
+ 
+ static pthread_key_t fuse_context_key;
+ static pthread_mutex_t fuse_context_lock = PTHREAD_MUTEX_INITIALIZER;
+ static int fuse_context_ref;
+ static struct fusemod_so *fuse_current_so;
+ static struct fuse_module *fuse_modules;
+ 
++/* Begin Fuse-NT */
++#ifndef _WIN32
+ static int fuse_load_so_name(const char *soname)
+ {
+ 	struct fusemod_so *so;
+ 
+ 	so = calloc(1, sizeof(struct fusemod_so));
+ 	if (!so) {
+ 		fprintf(stderr, "fuse: memory allocation failed\n");
+ 		return -1;
+ 	}
+ 
+ 	fuse_current_so = so;
+ 	so->handle = dlopen(soname, RTLD_NOW);
+ 	fuse_current_so = NULL;
+ 	if (!so->handle) {
+ 		fprintf(stderr, "fuse: %s\n", dlerror());
+ 		goto err;
+ 	}
+ 	if (!so->ctr) {
+ 		fprintf(stderr, "fuse: %s did not register any modules\n",
+ 			soname);
+@@ -240,40 +259,42 @@ static void fuse_put_module(struct fuse_
+ 	assert(m->ctr > 0);
+ 	m->ctr--;
+ 	if (!m->ctr && m->so) {
+ 		struct fusemod_so *so = m->so;
+ 		assert(so->ctr > 0);
+ 		so->ctr--;
+ 		if (!so->ctr) {
+ 			struct fuse_module **mp;
+ 			for (mp = &fuse_modules; *mp;) {
+ 				if ((*mp)->so == so)
+ 					*mp = (*mp)->next;
+ 				else
+ 					mp = &(*mp)->next;
+ 			}
+ 			dlclose(so->handle);
+ 			free(so);
+ 		}
+ 	}
+ 	pthread_mutex_unlock(&fuse_context_lock);
+ }
++#endif  /* _WIN32 */
++/* End Fuse-NT */
+ 
+ static struct node *get_node_nocheck(struct fuse *f, fuse_ino_t nodeid)
+ {
+ 	size_t hash = nodeid % f->id_table_size;
+ 	struct node *node;
+ 
+ 	for (node = f->id_table[hash]; node != NULL; node = node->id_next)
+ 		if (node->nodeid == nodeid)
+ 			return node;
+ 
+ 	return NULL;
+ }
+ 
+ static struct node *get_node(struct fuse *f, fuse_ino_t nodeid)
+ {
+ 	struct node *node = get_node_nocheck(f, nodeid);
+ 	if (!node) {
+ 		fprintf(stderr, "fuse internal error: node %llu not found\n",
+ 			(unsigned long long) nodeid);
+ 		abort();
+@@ -870,45 +891,47 @@ out:
+ }
+ 
+ static void set_stat(struct fuse *f, fuse_ino_t nodeid, struct stat *stbuf)
+ {
+ 	if (!f->conf.use_ino)
+ 		stbuf->st_ino = nodeid;
+ 	if (f->conf.set_mode)
+ 		stbuf->st_mode = (stbuf->st_mode & S_IFMT) |
+ 				 (0777 & ~f->conf.umask);
+ 	if (f->conf.set_uid)
+ 		stbuf->st_uid = f->conf.uid;
+ 	if (f->conf.set_gid)
+ 		stbuf->st_gid = f->conf.gid;
+ }
+ 
+ static struct fuse *req_fuse(fuse_req_t req)
+ {
+ 	return (struct fuse *) fuse_req_userdata(req);
+ }
+ 
++#ifndef _WIN32  /* Fuse-NT */
+ static void fuse_intr_sighandler(int sig)
+ {
+ 	(void) sig;
+ 	/* Nothing to do */
+ }
++#endif
+ 
+ struct fuse_intr_data {
+ 	pthread_t id;
+ 	pthread_cond_t cond;
+ 	int finished;
+ };
+ 
+ static void fuse_interrupt(fuse_req_t req, void *d_)
+ {
+ 	struct fuse_intr_data *d = d_;
+ 	struct fuse *f = req_fuse(req);
+ 
+ 	if (d->id == pthread_self())
+ 		return;
+ 
+ 	pthread_mutex_lock(&f->lock);
+ 	while (!d->finished) {
+ 		struct timeval now;
+ 		struct timespec timeout;
+ 
+@@ -937,41 +960,41 @@ static void fuse_do_prepare_interrupt(fu
+ 	d->id = pthread_self();
+ 	pthread_cond_init(&d->cond, NULL);
+ 	d->finished = 0;
+ 	fuse_req_interrupt_func(req, fuse_interrupt, d);
+ }
+ 
+ static inline void fuse_finish_interrupt(struct fuse *f, fuse_req_t req,
+ 					 struct fuse_intr_data *d)
+ {
+ 	if (f->conf.intr)
+ 		fuse_do_finish_interrupt(f, req, d);
+ }
+ 
+ static inline void fuse_prepare_interrupt(struct fuse *f, fuse_req_t req,
+ 					  struct fuse_intr_data *d)
+ {
+ 	if (f->conf.intr)
+ 		fuse_do_prepare_interrupt(req, d);
+ }
+ 
+-#ifndef __FreeBSD__
++#if !defined(__FreeBSD__) && !defined(_WIN32)  /* Fuse-NT */
+ 
+ static int fuse_compat_open(struct fuse_fs *fs, const char *path,
+ 			    struct fuse_file_info *fi)
+ {
+ 	int err;
+ 	if (!fs->compat || fs->compat >= 25)
+ 		err = fs->op.open(path, fi);
+ 	else if (fs->compat == 22) {
+ 		struct fuse_file_info_compat tmp;
+ 		memcpy(&tmp, fi, sizeof(tmp));
+ 		err = ((struct fuse_operations_compat22 *) &fs->op)->open(path,
+ 									  &tmp);
+ 		memcpy(fi, &tmp, sizeof(tmp));
+ 		fi->fh = tmp.fh;
+ 	} else
+ 		err = ((struct fuse_operations_compat2 *) &fs->op)
+ 			->open(path, fi->flags);
+ 	return err;
+ }
+ 
+@@ -1032,67 +1055,67 @@ static int fuse_compat_statfs(struct fus
+ 
+ 	if (!fs->compat || fs->compat >= 25) {
+ 		err = fs->op.statfs(fs->compat == 25 ? "/" : path, buf);
+ 	} else if (fs->compat > 11) {
+ 		struct statfs oldbuf;
+ 		err = ((struct fuse_operations_compat22 *) &fs->op)
+ 			->statfs("/", &oldbuf);
+ 		if (!err)
+ 			convert_statfs_old(&oldbuf, buf);
+ 	} else {
+ 		struct fuse_statfs_compat1 compatbuf;
+ 		memset(&compatbuf, 0, sizeof(struct fuse_statfs_compat1));
+ 		err = ((struct fuse_operations_compat1 *) &fs->op)
+ 			->statfs(&compatbuf);
+ 		if (!err)
+ 			convert_statfs_compat(&compatbuf, buf);
+ 	}
+ 	return err;
+ }
+ 
+-#else /* __FreeBSD__ */
++#else /* __FreeBSD__ || _WIN32 */  /* Fuse-NT */
+ 
+-static inline int fuse_compat_open(struct fuse_fs *fs, char *path,
++static inline int fuse_compat_open(struct fuse_fs *fs, const char *path,
+ 				   struct fuse_file_info *fi)
+ {
+ 	return fs->op.open(path, fi);
+ }
+ 
+ static inline int fuse_compat_release(struct fuse_fs *fs, const char *path,
+ 				      struct fuse_file_info *fi)
+ {
+ 	return fs->op.release(path, fi);
+ }
+ 
+ static inline int fuse_compat_opendir(struct fuse_fs *fs, const char *path,
+ 				      struct fuse_file_info *fi)
+ {
+ 	return fs->op.opendir(path, fi);
+ }
+ 
+ static inline int fuse_compat_statfs(struct fuse_fs *fs, const char *path,
+ 				     struct statvfs *buf)
+ {
+ 	return fs->op.statfs(fs->compat == 25 ? "/" : path, buf);
+ }
+ 
+-#endif /* __FreeBSD__ */
++#endif /* __FreeBSD__ || _WIN32 */  /* Fuse-NT */
+ 
+ int fuse_fs_getattr(struct fuse_fs *fs, const char *path, struct stat *buf)
+ {
+ 	fuse_get_context()->private_data = fs->user_data;
+ 	if (fs->op.getattr) {
+ 		if (fs->debug)
+ 			fprintf(stderr, "getattr %s\n", path);
+ 
+ 		return fs->op.getattr(path, buf);
+ 	} else {
+ 		return -ENOSYS;
+ 	}
+ }
+ 
+ int fuse_fs_fgetattr(struct fuse_fs *fs, const char *path, struct stat *buf,
+ 		     struct fuse_file_info *fi)
+ {
+ 	fuse_get_context()->private_data = fs->user_data;
+ 	if (fs->op.fgetattr) {
+ 		if (fs->debug)
+@@ -1502,52 +1525,59 @@ int fuse_fs_ftruncate(struct fuse_fs *fs
+ 				(unsigned long long) fi->fh, path,
+ 				(unsigned long long) size);
+ 
+ 		return fs->op.ftruncate(path, size, fi);
+ 	} else if (path && fs->op.truncate) {
+ 		if (fs->debug)
+ 			fprintf(stderr, "truncate %s %llu\n", path,
+ 				(unsigned long long) size);
+ 
+ 		return fs->op.truncate(path, size);
+ 	} else {
+ 		return -ENOSYS;
+ 	}
+ }
+ 
+ int fuse_fs_utimens(struct fuse_fs *fs, const char *path,
+ 		    const struct timespec tv[2])
+ {
+ 	fuse_get_context()->private_data = fs->user_data;
+ 	if (fs->op.utimens) {
++		/* Begin Fuse-NT */
+ 		if (fs->debug)
+-			fprintf(stderr, "utimens %s %li.%09lu %li.%09lu\n",
+-				path, tv[0].tv_sec, tv[0].tv_nsec,
+-				tv[1].tv_sec, tv[1].tv_nsec);
++			fprintf(stderr, "utimens %s %ji.%09ju %ji.%09ju\n",
++				path, (intmax_t)tv[0].tv_sec,
++				(uintmax_t)tv[0].tv_nsec,
++				(intmax_t)tv[1].tv_sec,
++				(uintmax_t)tv[1].tv_nsec);
++		/* End Fuse-NT */
+ 
+ 		return fs->op.utimens(path, tv);
+ 	} else if(fs->op.utime) {
+ 		struct utimbuf buf;
+ 
++		/* Begin Fuse-NT */
+ 		if (fs->debug)
+-			fprintf(stderr, "utime %s %li %li\n", path,
+-				tv[0].tv_sec, tv[1].tv_sec);
++			fprintf(stderr, "utime %s %ji %ji\n", path,
++				(intmax_t)tv[0].tv_sec,
++				(intmax_t)tv[1].tv_sec);
++		/* End Fuse-NT */
+ 
+ 		buf.actime = tv[0].tv_sec;
+ 		buf.modtime = tv[1].tv_sec;
+ 		return fs->op.utime(path, &buf);
+ 	} else {
+ 		return -ENOSYS;
+ 	}
+ }
+ 
+ int fuse_fs_access(struct fuse_fs *fs, const char *path, int mask)
+ {
+ 	fuse_get_context()->private_data = fs->user_data;
+ 	if (fs->op.access) {
+ 		if (fs->debug)
+ 			fprintf(stderr, "access %s 0%o\n", path, mask);
+ 
+ 		return fs->op.access(path, mask);
+ 	} else {
+ 		return -ENOSYS;
+ 	}
+@@ -1943,42 +1973,46 @@ void fuse_fs_init(struct fuse_fs *fs, st
+ 	if (fs->op.init)
+ 		fs->user_data = fs->op.init(conn);
+ }
+ 
+ static void fuse_lib_init(void *data, struct fuse_conn_info *conn)
+ {
+ 	struct fuse *f = (struct fuse *) data;
+ 	struct fuse_context_i *c = fuse_get_context_internal();
+ 
+ 	memset(c, 0, sizeof(*c));
+ 	c->ctx.fuse = f;
+ 	conn->want |= FUSE_CAP_EXPORT_SUPPORT;
+ 	fuse_fs_init(f->fs, conn);
+ }
+ 
+ void fuse_fs_destroy(struct fuse_fs *fs)
+ {
+ 	fuse_get_context()->private_data = fs->user_data;
+ 	if (fs->op.destroy)
+ 		fs->op.destroy(fs->user_data);
++/* Begin Fuse-NT */
++#ifndef _WIN32
+ 	if (fs->m)
+ 		fuse_put_module(fs->m);
++#endif
++/* End Fuse-NT */
+ 	free(fs);
+ }
+ 
+ static void fuse_lib_destroy(void *data)
+ {
+ 	struct fuse *f = (struct fuse *) data;
+ 	struct fuse_context_i *c = fuse_get_context_internal();
+ 
+ 	memset(c, 0, sizeof(*c));
+ 	c->ctx.fuse = f;
+ 	fuse_fs_destroy(f->fs);
+ 	f->fs = NULL;
+ }
+ 
+ static void fuse_lib_lookup(fuse_req_t req, fuse_ino_t parent,
+ 			    const char *name)
+ {
+ 	struct fuse *f = req_fuse_prepare(req);
+ 	struct fuse_entry_param e;
+ 	char *path;
+@@ -2678,45 +2712,45 @@ static int extend_contents(struct fuse_d
+ 			dh->error = -ENOMEM;
+ 			return -1;
+ 		}
+ 		dh->contents = newptr;
+ 		dh->size = newsize;
+ 	}
+ 	return 0;
+ }
+ 
+ static int fill_dir(void *dh_, const char *name, const struct stat *statp,
+ 		    off_t off)
+ {
+ 	struct fuse_dh *dh = (struct fuse_dh *) dh_;
+ 	struct stat stbuf;
+ 	size_t newlen;
+ 
+ 	if (statp)
+ 		stbuf = *statp;
+ 	else {
+ 		memset(&stbuf, 0, sizeof(stbuf));
+-		stbuf.st_ino = FUSE_UNKNOWN_INO;
++		stbuf.st_ino = (_ino_t)FUSE_UNKNOWN_INO;  /* Fuse-NT */
+ 	}
+ 
+ 	if (!dh->fuse->conf.use_ino) {
+-		stbuf.st_ino = FUSE_UNKNOWN_INO;
++		stbuf.st_ino = (_ino_t)FUSE_UNKNOWN_INO;  /* Fuse-NT */
+ 		if (dh->fuse->conf.readdir_ino) {
+ 			struct node *node;
+ 			pthread_mutex_lock(&dh->fuse->lock);
+ 			node = lookup_node(dh->fuse, dh->nodeid, name);
+ 			if (node)
+ 				stbuf.st_ino  = (ino_t) node->nodeid;
+ 			pthread_mutex_unlock(&dh->fuse->lock);
+ 		}
+ 	}
+ 
+ 	if (off) {
+ 		if (extend_contents(dh, dh->needlen) == -1)
+ 			return 1;
+ 
+ 		dh->filled = 0;
+ 		newlen = dh->len +
+ 			fuse_add_direntry(dh->req, dh->contents + dh->len,
+ 					  dh->needlen - dh->len, name,
+ 					  &stbuf, off);
+ 		if (newlen > dh->needlen)
+@@ -3522,43 +3556,49 @@ static const struct fuse_opt fuse_lib_op
+ 	FUSE_OPT_END
+ };
+ 
+ static void fuse_lib_help(void)
+ {
+ 	fprintf(stderr,
+ "    -o hard_remove         immediate removal (don't hide files)\n"
+ "    -o use_ino             let filesystem set inode numbers\n"
+ "    -o readdir_ino         try to fill in d_ino in readdir\n"
+ "    -o direct_io           use direct I/O\n"
+ "    -o kernel_cache        cache files in kernel\n"
+ "    -o [no]auto_cache      enable caching based on modification times (off)\n"
+ "    -o umask=M             set file permissions (octal)\n"
+ "    -o uid=N               set file owner\n"
+ "    -o gid=N               set file group\n"
+ "    -o entry_timeout=T     cache timeout for names (1.0s)\n"
+ "    -o negative_timeout=T  cache timeout for deleted names (0.0s)\n"
+ "    -o attr_timeout=T      cache timeout for attributes (1.0s)\n"
+ "    -o ac_attr_timeout=T   auto cache timeout for attributes (attr_timeout)\n"
+ "    -o intr                allow requests to be interrupted\n"
++#ifndef _WIN32  /* Begin Fuse-NT */
+ "    -o intr_signal=NUM     signal to send on interrupt (%i)\n"
++#endif  /* End Fuse-NT */
+ "    -o modules=M1[:M2...]  names of modules to push onto filesystem stack\n"
+-"\n", FUSE_DEFAULT_INTR_SIGNAL);
++"\n"
++#ifndef _WIN32  /* Begin Fuse-NT */
++, FUSE_DEFAULT_INTR_SIGNAL
++#endif  /* End Fuse-NT */
++);
+ }
+ 
+ static void fuse_lib_help_modules(void)
+ {
+ 	struct fuse_module *m;
+ 	fprintf(stderr, "\nModule options:\n");
+ 	pthread_mutex_lock(&fuse_context_lock);
+ 	for (m = fuse_modules; m; m = m->next) {
+ 		struct fuse_fs *fs = NULL;
+ 		struct fuse_fs *newfs;
+ 		struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
+ 		if (fuse_opt_add_arg(&args, "") != -1 &&
+ 		    fuse_opt_add_arg(&args, "-h") != -1) {
+ 			fprintf(stderr, "\n[%s]\n", m->name);
+ 			newfs = m->factory(&args, &fs);
+ 			assert(newfs == NULL);
+ 		}
+ 		fuse_opt_free_args(&args);
+ 	}
+ 	pthread_mutex_unlock(&fuse_context_lock);
+@@ -3567,40 +3607,42 @@ static void fuse_lib_help_modules(void)
+ static int fuse_lib_opt_proc(void *data, const char *arg, int key,
+ 			     struct fuse_args *outargs)
+ {
+ 	(void) arg; (void) outargs;
+ 
+ 	if (key == KEY_HELP) {
+ 		struct fuse_config *conf = (struct fuse_config *) data;
+ 		fuse_lib_help();
+ 		conf->help = 1;
+ 	}
+ 
+ 	return 1;
+ }
+ 
+ int fuse_is_lib_option(const char *opt)
+ {
+ 	return fuse_lowlevel_is_lib_option(opt) ||
+ 		fuse_opt_match(fuse_lib_opts, opt);
+ }
+ 
++/* Begin Fuse-NT */
++#ifndef _WIN32
+ static int fuse_init_intr_signal(int signum, int *installed)
+ {
+ 	struct sigaction old_sa;
+ 
+ 	if (sigaction(signum, NULL, &old_sa) == -1) {
+ 		perror("fuse: cannot get old signal handler");
+ 		return -1;
+ 	}
+ 
+ 	if (old_sa.sa_handler == SIG_DFL) {
+ 		struct sigaction sa;
+ 
+ 		memset(&sa, 0, sizeof(struct sigaction));
+ 		sa.sa_handler = fuse_intr_sighandler;
+ 		sigemptyset(&sa.sa_mask);
+ 
+ 		if (sigaction(signum, &sa, NULL) == -1) {
+ 			perror("fuse: cannot set interrupt signal handler");
+ 			return -1;
+ 		}
+@@ -3622,40 +3664,42 @@ static void fuse_restore_intr_signal(int
+ static int fuse_push_module(struct fuse *f, const char *module,
+ 			    struct fuse_args *args)
+ {
+ 	struct fuse_fs *fs[2] = { f->fs, NULL };
+ 	struct fuse_fs *newfs;
+ 	struct fuse_module *m = fuse_get_module(module);
+ 
+ 	if (!m)
+ 		return -1;
+ 
+ 	newfs = m->factory(args, fs);
+ 	if (!newfs) {
+ 		fuse_put_module(m);
+ 		return -1;
+ 	}
+ 	newfs->m = m;
+ 	f->fs = newfs;
+ 	f->nullpath_ok = newfs->op.flag_nullpath_ok && f->nullpath_ok;
+ 	return 0;
+ }
++#endif  /* _WIN32 */
++/* End Fuse-NT */
+ 
+ struct fuse_fs *fuse_fs_new(const struct fuse_operations *op, size_t op_size,
+ 			    void *user_data)
+ {
+ 	struct fuse_fs *fs;
+ 
+ 	if (sizeof(struct fuse_operations) < op_size) {
+ 		fprintf(stderr, "fuse: warning: library too old, some operations may not not work\n");
+ 		op_size = sizeof(struct fuse_operations);
+ 	}
+ 
+ 	fs = (struct fuse_fs *) calloc(1, sizeof(struct fuse_fs));
+ 	if (!fs) {
+ 		fprintf(stderr, "fuse: failed to allocate fuse_fs object\n");
+ 		return NULL;
+ 	}
+ 
+ 	fs->user_data = user_data;
+ 	if (op)
+ 		memcpy(&fs->op, op, op_size);
+@@ -3680,60 +3724,65 @@ struct fuse *fuse_new_common(struct fuse
+ 		goto out_delete_context_key;
+ 	}
+ 
+ 	fs = fuse_fs_new(op, op_size, user_data);
+ 	if (!fs)
+ 		goto out_free;
+ 
+ 	fs->compat = compat;
+ 	f->fs = fs;
+ 	f->nullpath_ok = fs->op.flag_nullpath_ok;
+ 
+ 	/* Oh f**k, this is ugly! */
+ 	if (!fs->op.lock) {
+ 		llop.getlk = NULL;
+ 		llop.setlk = NULL;
+ 	}
+ 
+ 	f->conf.entry_timeout = 1.0;
+ 	f->conf.attr_timeout = 1.0;
+ 	f->conf.negative_timeout = 0.0;
++
++#ifndef _WIN32  /* Fuse-NT */
+ 	f->conf.intr_signal = FUSE_DEFAULT_INTR_SIGNAL;
++#endif
+ 
+ 	if (fuse_opt_parse(args, &f->conf, fuse_lib_opts,
+ 			   fuse_lib_opt_proc) == -1)
+ 		goto out_free_fs;
+ 
++#ifndef _WIN32  /* Begin Fuse-NT */
+ 	if (f->conf.modules) {
+ 		char *module;
+ 		char *next;
+ 
+ 		for (module = f->conf.modules; module; module = next) {
+ 			char *p;
+ 			for (p = module; *p && *p != ':'; p++);
+ 			next = *p ? p + 1 : NULL;
+ 			*p = '\0';
+ 			if (module[0] &&
+ 			    fuse_push_module(f, module, args) == -1)
+ 				goto out_free_fs;
+ 		}
+ 	}
++#endif  /* _WIN32 (End Fuse-NT) */
+ 
+ 	if (!f->conf.ac_attr_timeout_set)
+ 		f->conf.ac_attr_timeout = f->conf.attr_timeout;
+ 
+ #ifdef __FreeBSD__
+ 	/*
+ 	 * In FreeBSD, we always use these settings as inode numbers
+ 	 * are needed to make getcwd(3) work.
+ 	 */
+ 	f->conf.readdir_ino = 1;
+ #endif
+ 
+ 	if (compat && compat <= 25) {
+ 		if (fuse_sync_compat_args(args) == -1)
+ 			goto out_free_fs;
+ 	}
+ 
+ 	f->se = fuse_lowlevel_new_common(args, &llop, sizeof(llop), f);
+ 	if (f->se == NULL) {
+ 		if (f->conf.help)
+@@ -3764,157 +3813,165 @@ struct fuse *fuse_new_common(struct fuse
+ 		calloc(1, sizeof(struct node *) * f->id_table_size);
+ 	if (f->id_table == NULL) {
+ 		fprintf(stderr, "fuse: memory allocation failed\n");
+ 		goto out_free_name_table;
+ 	}
+ 
+ 	fuse_mutex_init(&f->lock);
+ 
+ 	root = (struct node *) calloc(1, sizeof(struct node));
+ 	if (root == NULL) {
+ 		fprintf(stderr, "fuse: memory allocation failed\n");
+ 		goto out_free_id_table;
+ 	}
+ 
+ 	root->name = strdup("/");
+ 	if (root->name == NULL) {
+ 		fprintf(stderr, "fuse: memory allocation failed\n");
+ 		goto out_free_root;
+ 	}
+ 
++#ifndef _WIN32  /* Fuse-NT */
+ 	if (f->conf.intr &&
+ 	    fuse_init_intr_signal(f->conf.intr_signal,
+ 				  &f->intr_installed) == -1)
+ 		goto out_free_root_name;
++#endif
+ 
+ 	root->parent = NULL;
+ 	root->nodeid = FUSE_ROOT_ID;
+ 	root->generation = 0;
+ 	root->refctr = 1;
+ 	root->nlookup = 1;
+ 	hash_id(f, root);
+ 
+ 	return f;
+ 
++#ifndef _WIN32  /* Fuse-NT */
+ out_free_root_name:
++#endif
+ 	free(root->name);
+ out_free_root:
+ 	free(root);
+ out_free_id_table:
+ 	free(f->id_table);
+ out_free_name_table:
+ 	free(f->name_table);
+ out_free_session:
+ 	fuse_session_destroy(f->se);
+ out_free_fs:
+ 	/* Horrible compatibility hack to stop the destructor from being
+ 	   called on the filesystem without init being called first */
+ 	fs->op.destroy = NULL;
+ 	fuse_fs_destroy(f->fs);
+ 	free(f->conf.modules);
+ out_free:
+ 	free(f);
+ out_delete_context_key:
+ 	fuse_delete_context_key();
+ out:
+ 	return NULL;
+ }
+ 
+ struct fuse *fuse_new(struct fuse_chan *ch, struct fuse_args *args,
+ 		      const struct fuse_operations *op, size_t op_size,
+ 		      void *user_data)
+ {
+ 	return fuse_new_common(ch, args, op, op_size, user_data, 0);
+ }
+ 
+ void fuse_destroy(struct fuse *f)
+ {
+ 	size_t i;
+ 
++#ifndef _WIN32  /* Fuse-NT */
+ 	if (f->conf.intr && f->intr_installed)
+ 		fuse_restore_intr_signal(f->conf.intr_signal);
++#endif
+ 
+ 	if (f->fs) {
+ 		struct fuse_context_i *c = fuse_get_context_internal();
+ 
+ 		memset(c, 0, sizeof(*c));
+ 		c->ctx.fuse = f;
+ 
+ 		for (i = 0; i < f->id_table_size; i++) {
+ 			struct node *node;
+ 
+ 			for (node = f->id_table[i]; node != NULL;
+ 			     node = node->id_next) {
+ 				if (node->is_hidden) {
+ 					char *path;
+ 					if (try_get_path(f, node->nodeid, NULL, &path, NULL, 0) == 0) {
+ 						fuse_fs_unlink(f->fs, path);
+ 						free(path);
+ 					}
+ 				}
+ 			}
  		}
  	}
  	for (i = 0; i < f->id_table_size; i++) {
@@ -10012,7 +10688,7 @@ Index: fuse-2.8.5/lib/fuse.c
  	fuse_delete_context_key();
  }
  
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  static struct fuse *fuse_new_common_compat25(int fd, struct fuse_args *args,
  					     const struct fuse_operations *op,
  					     size_t op_size, int compat)
@@ -10040,7 +10716,7 @@ Index: fuse-2.8.5/lib/fuse.c
  }
  
 -#ifndef __FreeBSD__
-+#if !defined __FreeBSD__ && !defined __CYGWIN__
++#if !defined __FreeBSD__ && !defined _WIN32
  
  static struct fuse *fuse_new_common_compat(int fd, const char *opts,
  					   const struct fuse_operations *op,
@@ -10061,7 +10737,7 @@ Index: fuse-2.8.5/lib/fuse.c
  	fuse_opt_free_args(&args);
  
  	return f;
-@@ -3937,31 +3940,35 @@ struct fuse *fuse_new_compat2(int fd, co
+@@ -3937,31 +3994,35 @@ struct fuse *fuse_new_compat2(int fd, co
  }
  
  struct fuse *fuse_new_compat1(int fd, int flags,
@@ -10083,9 +10759,9 @@ Index: fuse-2.8.5/lib/fuse.c
  FUSE_SYMVER(".symver fuse_new_compat22,fuse_new@FUSE_2.2");
  
 -#endif /* __FreeBSD__ */
-+#endif /* __FreeBSD__ || __CYGWIN__ */
++#endif /* __FreeBSD__ || _WIN32 */
 +
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  
  struct fuse *fuse_new_compat25(int fd, struct fuse_args *args,
  			       const struct fuse_operations_compat25 *op,
@@ -10097,7 +10773,7 @@ Index: fuse-2.8.5/lib/fuse.c
  
  FUSE_SYMVER(".symver fuse_new_compat25,fuse_new@FUSE_2.5");
 +
-+#endif /* !__CYGWIN__ */
++#endif /* !_WIN32 */
 Index: fuse-2.8.5/lib/fuse_fs_defines.h
 ===================================================================
 --- /dev/null
@@ -10134,7 +10810,7 @@ Index: fuse-2.8.5/lib/fuse_i.h
  #include "fuse_lowlevel.h"
  
 +#ifdef _WIN32
-+# include <windows.h>
++typedef void* HANDLE;
 +#endif
 +
  struct fuse_chan;
@@ -10254,7 +10930,7 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/fuse_kern_chan.c
 +++ fuse-2.8.5/lib/fuse_kern_chan.c
-@@ -1,95 +1,213 @@
+@@ -1,95 +1,234 @@
  /*
    FUSE: Filesystem in Userspace
    Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -10263,6 +10939,12 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
    See the file COPYING.LIB
  */
  
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++# include <pthread.h>
++#endif
++
  #include "fuse_lowlevel.h"
  #include "fuse_kernel.h"
  #include "fuse_i.h"
@@ -10272,8 +10954,17 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
  #include <unistd.h>
  #include <assert.h>
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32  /* Fuse-NT */
++# define __INTERLOCKED_DECLARED 1
++# include <ddk/ntddk.h>
++/* The userspace ones have the same prototypes ... */
++# include <ddk/ntifs.h>
++# include <ddk/dderror.h>
++# include <ntstatus.h>
++# include <ntstrsafe.h>
++
 +# include "fusent_proto.h"
++
 +#endif
 +
  static int fuse_kern_chan_receive(struct fuse_chan **chp, char *buf,
@@ -10285,7 +10976,7 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
  	struct fuse_session *se = fuse_chan_session(ch);
  	assert(se != NULL);
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	IO_STATUS_BLOCK iosb;
 +	HANDLE ioevent = CreateEvent(NULL, FALSE, FALSE, NULL);
 +	NTSTATUS stat = NtFsControlFile(fuse_chan_fd(ch), ioevent, NULL, NULL, &iosb, IRP_FUSE_MODULE_REQUEST, NULL, 0, buf, size);
@@ -10348,7 +11039,7 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
 -	if ((size_t) res < sizeof(struct fuse_in_header)) {
 +#endif
 +
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	if ((size_t) res < sizeof(FUSENT_REQ))
 +#else
 +	if ((size_t) res < sizeof(struct fuse_in_header))
@@ -10367,7 +11058,7 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
 -	if (iov) {
 +	if (!iov) return 0;
 +
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	IO_STATUS_BLOCK iosb;
 +	int io;
 +	size_t total = 0, idx = 0;
@@ -10405,7 +11096,8 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
 +		CloseHandle(ioevent);
 +
 +		if (waitres != WAIT_OBJECT_0) {
-+			fprintf(stderr, "fuse: waiting for send() asyncio failed: (%08x)\n", waitres);
++			fprintf(stderr, "fuse: waiting for send() asyncio failed: (%08jx)\n",
++			    (uintmax_t)waitres);
 +			if (count != 1)
 +				free(buf);
 +			return -EFAULT;
@@ -10423,7 +11115,8 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
 +
 +		if (fuse_session_exited(se)) return 0;
 +
-+		fprintf(stderr, "fuse: writing device: got (%08x), expected STATUS_SUCCESS\n", stat);
++		fprintf(stderr, "fuse: writing device: got (%08jx), expected STATUS_SUCCESS\n",
++		    (uintmax_t)stat);
 +
 +		return -EFAULT;
 +	}
@@ -10448,7 +11141,7 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
  
  static void fuse_kern_chan_destroy(struct fuse_chan *ch)
  {
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	CloseHandle(fuse_chan_fd(ch));
 +#else
  	close(fuse_chan_fd(ch));
@@ -10457,7 +11150,7 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
  
  #define MIN_BUFSIZE 0x21000
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +struct fuse_chan *fuse_kern_chan_new(HANDLE fd)
 +#else
  struct fuse_chan *fuse_kern_chan_new(int fd)
@@ -10468,7 +11161,11 @@ Index: fuse-2.8.5/lib/fuse_kern_chan.c
  		.send = fuse_kern_chan_send,
  		.destroy = fuse_kern_chan_destroy,
  	};
++#ifdef _WIN32
++	size_t bufsize = 0x1000 + 0x1000;
++#else
  	size_t bufsize = getpagesize() + 0x1000;
++#endif
  	bufsize = bufsize < MIN_BUFSIZE ? MIN_BUFSIZE : bufsize;
  	return fuse_chan_new(&op, fd, bufsize, NULL);
  }
@@ -10476,7 +11173,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/fuse_lowlevel.c
 +++ fuse-2.8.5/lib/fuse_lowlevel.c
-@@ -1,84 +1,286 @@
+@@ -1,84 +1,297 @@
  /*
    FUSE: Filesystem in Userspace
    Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -10485,6 +11182,11 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
    See the file COPYING.LIB
  */
  
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include <pthread.h>
++#endif /* _WIN32 */
++
  #include "fuse_i.h"
  #include "fuse_kernel.h"
  #include "fuse_opt.h"
@@ -10492,12 +11194,14 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  #include "fuse_common_compat.h"
  #include "fuse_lowlevel_compat.h"
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32  /* Fuse-NT */
++# define __INTERLOCKED_DECLARED 1
++# include <ddk/ntddk.h>
++# include <ddk/ntifs.h>
++
 +# include "fusent_proto.h"
 +# include "fusent_routines.h"
 +# include "st.h"
-+
-+# include <ddk/ntifs.h>
 +
 +# include <iconv.h>
 +
@@ -10507,7 +11211,9 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +# include <ctype.h>
 +
 +# define FUSENT_MAX_PATH 256
-+#endif /* __CYGWIN__ */
++
++typedef IO_STACK_LOCATION EXTENDED_IO_STACK_LOCATION;
++#endif /* _WIN32 */
 +
  #include <stdio.h>
  #include <stdlib.h>
@@ -10520,7 +11226,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  #define PARAM(inarg) (((char *)(inarg)) + sizeof(*(inarg)))
  #define OFFSET_MAX 0x7fffffffffffffffLL
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +// Sets up any data structures the fusent translate layer will need to persist
 +// across calls.
 +
@@ -10703,7 +11409,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +
 +	*winattr = val;
 +}
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 +
  struct fuse_pollhandle {
  	uint64_t kh;
@@ -10720,8 +11426,10 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	attr->gid	= stbuf->st_gid;
  	attr->rdev	= stbuf->st_rdev;
  	attr->size	= stbuf->st_size;
++#ifndef _WIN32  /* Fuse-NT */
  	attr->blksize	= stbuf->st_blksize;
  	attr->blocks	= stbuf->st_blocks;
++#endif
  	attr->atime	= stbuf->st_atime;
  	attr->mtime	= stbuf->st_mtime;
  	attr->ctime	= stbuf->st_ctime;
@@ -10764,7 +11472,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	struct fuse_req *prev = req->prev;
  	struct fuse_req *next = req->next;
  	prev->next = next;
-@@ -110,106 +312,133 @@ void fuse_free_req(fuse_req_t req)
+@@ -110,106 +323,134 @@ void fuse_free_req(fuse_req_t req)
  	req->u.ni.data = NULL;
  	list_del_req(req);
  	ctr = --req->ctr;
@@ -10803,12 +11511,13 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  		}
  	}
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +	if (req->response_hijack) {
 +		*req->response_hijack = out;
 +		if (req->response_hijack_buf && count > 1) {
 +			size_t len = iov[1].iov_len;
-+			printf("reply_iov_nofree copying 0x%.8x bytes from %p to %p\n", len, iov[1].iov_base, req->response_hijack_buf);
++			printf("reply_iov_nofree copying 0x%.8zx bytes from %p to %p\n",
++			    len, iov[1].iov_base, req->response_hijack_buf);
 +			// Ensure that buf is large enough to hold iov (copy as much as we can):
 +			if (len > req->response_hijack_buflen) len = req->response_hijack_buflen;
 +			
@@ -10899,7 +11608,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	return buf + entsize;
  }
  
-@@ -233,40 +462,46 @@ static void convert_statfs(const struct
+@@ -233,40 +474,46 @@ static void convert_statfs(const struct
  	kstatfs->blocks	 = stbuf->f_blocks;
  	kstatfs->bfree	 = stbuf->f_bfree;
  	kstatfs->bavail	 = stbuf->f_bavail;
@@ -10921,7 +11630,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  void fuse_reply_none(fuse_req_t req)
  {
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +	if (req->response_hijack)
 +		memset(req->response_hijack, 0, sizeof(struct fuse_out_header));
 +	else
@@ -10946,7 +11655,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	if (f < 0.0)
  		return 0;
  	else if (f >= 0.999999999)
-@@ -742,40 +977,44 @@ static void do_read(fuse_req_t req, fuse
+@@ -742,40 +989,44 @@ static void do_read(fuse_req_t req, fuse
  
  static void do_write(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
  {
@@ -10967,7 +11676,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  		param = PARAM(arg);
  	}
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +	param = req->response_hijack_buf; // abusing the crap out of this, oops
 +#endif
 +
@@ -10991,7 +11700,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  		fi.lock_owner = arg->lock_owner;
  
  	if (req->f->op.flush)
-@@ -1039,61 +1278,64 @@ static int find_interrupted(struct fuse_
+@@ -1039,61 +1290,64 @@ static int find_interrupted(struct fuse_
  static void do_interrupt(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
  {
  	struct fuse_interrupt_in *arg = (struct fuse_interrupt_in *) inarg;
@@ -11013,7 +11722,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  }
  
 +// This is only used by a Unix-only portion of fuse_ll_process:
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  static struct fuse_req *check_interrupt(struct fuse_ll *f, struct fuse_req *req)
  {
  	struct fuse_req *curr;
@@ -11035,7 +11744,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	} else
  		return NULL;
  }
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
  
  static void do_bmap(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
  {
@@ -11056,7 +11765,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  
  	memset(&fi, 0, sizeof(fi));
  	fi.fh = arg->fh;
-@@ -1419,62 +1661,1269 @@ static struct {
+@@ -1419,62 +1673,1275 @@ static struct {
  	[FUSE_SETXATTR]	   = { do_setxattr,    "SETXATTR"    },
  	[FUSE_GETXATTR]	   = { do_getxattr,    "GETXATTR"    },
  	[FUSE_LISTXATTR]   = { do_listxattr,   "LISTXATTR"   },
@@ -11077,7 +11786,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	[FUSE_IOCTL]	   = { do_ioctl,       "IOCTL"	     },
  	[FUSE_POLL]	   = { do_poll,        "POLL"	     },
  	[FUSE_DESTROY]	   = { do_destroy,     "DESTROY"     },
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	[CUSE_INIT]	   = { NULL,           "CUSE_INIT"   },
 +#else
  	[CUSE_INIT]	   = { cuse_lowlevel_init, "CUSE_INIT"   },
@@ -11087,7 +11796,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  #define FUSE_MAXOP (sizeof(fuse_ll_ops) / sizeof(fuse_ll_ops[0]))
  
 +// This is only used by a Unix-only part of fuse_ll_process:
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  static const char *opname(enum fuse_opcode opcode)
  {
  	if (opcode >= FUSE_MAXOP || !fuse_ll_ops[opcode].name)
@@ -11097,7 +11806,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  }
 +#endif
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +// Does an in-place conversion of a Windows-formatted buffer to
 +// Unix-formatted. Probably buggy.
 +static void fusent_convert_win_path(char *buf, size_t *len) {
@@ -11352,7 +12061,6 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +
 +	// Decode NT operation flags from IRP:
 +	uint32_t CreateOptions = iosp->Parameters.Create.Options;
-+	uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
 +	uint8_t CreateDisp = CreateOptions >> 24;
 +
 +	int issync = 0;
@@ -11361,14 +12069,18 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +			(ntreq->irp.Flags & IRP_SYNCHRONOUS_API))
 +		issync = 1;
 +
-+	int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
++	int fuse_flags = 0;
 +	if (CreateDisp != FILE_OPEN && CreateDisp != FILE_OVERWRITE)
 +		fuse_flags |= O_CREAT;
-+	if (CreateDisp == FILE_CREATE) fuse_flags |= O_EXCL;
++	if (CreateDisp == FILE_CREATE)
++		fuse_flags |= O_EXCL;
 +	if (CreateDisp == FILE_OVERWRITE || CreateDisp == FILE_OVERWRITE_IF ||
 +			CreateDisp == FILE_SUPERSEDE)
 +		fuse_flags |= O_TRUNC;
-+	if (CreateOptions & FILE_DIRECTORY_FILE) fuse_flags |= O_DIRECTORY;
++#if 0
++	if (CreateOptions & FILE_DIRECTORY_FILE)
++		fuse_flags |= O_DIRECTORY;
++#endif
 +
 +	// Extract the file path from the NT request:
 +	uint32_t fnamelen;
@@ -11400,7 +12112,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +	outbuf2 = outbuf;
 +
 +	// Convert and then reset the cd
-+	iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
++	iconv(cd_utf16le_to_utf8, (const char **)&inbuf, &inbytes, &outbuf, &outbytes);
 +	iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
 +	size_t utf8len = outbuf - outbuf2;
 +
@@ -11421,12 +12133,13 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +		// Look up inode for the parent directory of the file we want to create:
 +		struct fuse_create_in *args = (struct fuse_create_in *)stbuf;
 +		args->flags = fuse_flags;
-+		args->umask = S_IXGRP | S_IXOTH;
++		args->umask = 0011;
 +
 +		fuse_ino_t par_inode;
 +		if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
 +			err = ENOENT;
-+			fprintf(stderr, "CREATE failed because parent does not exist: (%d)`%s' fnamep: (%d)`%S'\n", utf8len, outbuf2, fnamelen, fnamep);
++			fprintf(stderr, "CREATE failed because parent does not exist: (%zu)`%s' fnamep: (%u)`%S'\n",
++			    utf8len, outbuf2, fnamelen, fnamep);
 +			goto reply_err_nt;
 +		}
 +
@@ -11740,11 +12453,12 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +		size_t fdilen = fusent_fdient_size(utf16lenbytes);
 +		if (fdilen > nbytesout) break;
 +
-+		fprintf(stderr, "dirctrl: dirent->name: %.*s\treclen:0x%.8x\tino: %llu\n", (int)dirent->namelen, dirent->name, reclen, dirent->ino);
++		fprintf(stderr, "dirctrl: dirent->name: %.*s\treclen:0x%.8zx\tino: %llu\n",
++		    (int)dirent->namelen, dirent->name, reclen, dirent->ino);
 +
 +		struct fuse_attr_out attr;
-+		struct fuse_out_header outh2;
-+		struct fuse_getattr_in args = { 0, 0, 0 };
++		//struct fuse_out_header outh2;
++		//struct fuse_getattr_in args = { 0, 0, 0 };
 +
 +		// TODO lookup first if dirent->ino == FUSE_UNKNOWN_INO
 +		//req->response_hijack = &outh2;
@@ -11827,7 +12541,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +	// For more info on these params, see the MSDN on IRP_MJ_DIRECTORY_CONTROL:
 +	// http://msdn.microsoft.com/en-us/library/ff548658(v=vs.85).aspx
 +	EXTENDED_IO_STACK_LOCATION *irpsp = (EXTENDED_IO_STACK_LOCATION *)iosp;
-+	UCHAR flags = irpsp->Flags;
++	//UCHAR flags = irpsp->Flags;
 +	if (irpsp->MinorFunction != IRP_MN_QUERY_DIRECTORY) {
 +		err = ENOSYS;
 +		goto reply_err_nt;
@@ -11935,7 +12649,8 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +	dl->off = p - dl->listing;
 +
 +	// Reply with a big fat buf!
-+	fprintf(stderr, "DIRCTL: Replying with a N-byte buf: %08x (header: %08x)\n", o - outbuf, sizeof(FUSENT_RESP));
++	fprintf(stderr, "DIRCTL: Replying with a N-byte buf: %08jx (header: %08jx)\n",
++	    (uintmax_t)(o - outbuf), (uintmax_t)sizeof(FUSENT_RESP));
 +	fusent_reply_dirctrl(req, ntreq->pirp, fop, o - outbuf, outbuf);
 +	free(outbuf);
 +	return;
@@ -11954,7 +12669,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +// Handle an IRP_MJ_CLOSE request
 +static void fusent_do_close(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 +{
-+	UCHAR flags = iosp->Flags;
++	//UCHAR flags = iosp->Flags;
 +	int err;
 +
 +	// TODO: flush, release
@@ -12001,7 +12716,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +// Handle an IRP_MJ_FLUSH_BUFFERS request
 +static void fusent_do_flush_buffers(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
 +{
-+	UCHAR flags = iosp->Flags;
++	//UCHAR flags = iosp->Flags;
 +	int err;
 +
 +	// TODO: fill in this function stub
@@ -12294,7 +13009,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
 +	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
 +}
 +
-+#else /* __CYGWIN__ */
++#else /* _WIN32 */
  
  static void fuse_ll_process(void *data, const char *buf, size_t len,
  			    struct fuse_chan *ch)
@@ -12328,7 +13043,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	req->ctx.pid = in->pid;
  	req->ch = ch;
  	req->ctr = 1;
-@@ -1500,40 +2949,41 @@ static void fuse_ll_process(void *data,
+@@ -1500,40 +2967,41 @@ static void fuse_ll_process(void *data,
  		goto reply_err;
  
  	err = ENOSYS;
@@ -12349,7 +13064,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
   reply_err:
  	fuse_reply_err(req, err);
  }
-+#endif /* !__CYGWIN__ */
++#endif /* !_WIN32 */
  
  enum {
  	KEY_HELP,
@@ -12370,7 +13085,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	FUSE_OPT_KEY("max_read=", FUSE_OPT_KEY_DISCARD),
  	FUSE_OPT_KEY("-h", KEY_HELP),
  	FUSE_OPT_KEY("--help", KEY_HELP),
-@@ -1595,41 +3045,45 @@ static void fuse_ll_destroy(void *data)
+@@ -1595,94 +3063,100 @@ static void fuse_ll_destroy(void *data)
  			f->op.destroy(f->userdata);
  	}
  
@@ -12391,7 +13106,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	struct fuse_ll *f;
  	struct fuse_session *se;
  	struct fuse_session_ops sop = {
-+#if defined __CYGWIN__
++#if defined _WIN32
 +		.process = fusent_ll_process,
 +#else
  		.process = fuse_ll_process,
@@ -12416,7 +13131,20 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	f->atomic_o_trunc = 0;
  	list_init_req(&f->list);
  	list_init_req(&f->interrupts);
-@@ -1648,41 +3102,41 @@ struct fuse_session *fuse_lowlevel_new_c
+ 	fuse_mutex_init(&f->lock);
+ 
+ 	if (fuse_opt_parse(args, f, fuse_ll_opts, fuse_ll_opt_proc) == -1)
+ 		goto out_free;
+ 
+ 	if (f->debug)
+ 		fprintf(stderr, "FUSE library version: %s\n", PACKAGE_VERSION);
+ 
+ 	memcpy(&f->op, op, op_size);
++#ifndef _WIN32  /* Fuse-NT */
+ 	f->owner = getuid();
++#endif
+ 	f->userdata = userdata;
+ 
  	se = fuse_session_new(&sop, f);
  	if (!se)
  		goto out_free;
@@ -12438,7 +13166,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  }
  
 -#ifdef linux
-+#if defined(linux) && !defined(__CYGWIN__)
++#if defined(linux) && !defined(_WIN32)
  int fuse_req_getgroups(fuse_req_t req, int size, gid_t list[])
  {
  	char *buf;
@@ -12459,7 +13187,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	ret = -EIO;
  	fd = open(path, O_RDONLY);
  	if (fd == -1)
-@@ -1717,41 +3171,41 @@ retry:
+@@ -1717,41 +3191,41 @@ retry:
  		s = end;
  		if (ret < size)
  			list[ret] = val;
@@ -12481,7 +13209,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  #endif
  
 -#ifndef __FreeBSD__
-+#if !defined __FreeBSD__ && !defined __CYGWIN__
++#if !defined __FreeBSD__ && !defined _WIN32
  
  static void fill_open_compat(struct fuse_open_out *arg,
  			     const struct fuse_file_info_compat *f)
@@ -12502,7 +13230,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  	buf->f_bavail	= compatbuf->f_bavail;
  	buf->f_files	= compatbuf->f_files;
  	buf->f_ffree	= compatbuf->f_ffree;
-@@ -1819,43 +3273,47 @@ int fuse_sync_compat_args(struct fuse_ar
+@@ -1819,43 +3293,47 @@ int fuse_sync_compat_args(struct fuse_ar
  	if (fuse_opt_parse(args, &conf, fuse_ll_opts_compat, NULL) == -1)
  		return -1;
  
@@ -12524,7 +13252,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  FUSE_SYMVER(".symver fuse_lowlevel_new_compat,fuse_lowlevel_new@FUSE_2.4");
  
 -#else /* __FreeBSD__ */
-+#else /* __FreeBSD__ || __CYGWIN__ */
++#else /* __FreeBSD__ || _WIN32 */
  
  int fuse_sync_compat_args(struct fuse_args *args)
  {
@@ -12533,9 +13261,9 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  }
  
 -#endif /* __FreeBSD__ */
-+#endif /* __FreeBSD__ || __CYGWIN__ */
++#endif /* __FreeBSD__ || _WIN32 */
 +
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  
  struct fuse_session *fuse_lowlevel_new_compat25(struct fuse_args *args,
  				const struct fuse_lowlevel_ops_compat25 *op,
@@ -12551,7 +13279,7 @@ Index: fuse-2.8.5/lib/fuse_lowlevel.c
  
  FUSE_SYMVER(".symver fuse_lowlevel_new_compat25,fuse_lowlevel_new@FUSE_2.5");
 +
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 Index: fuse-2.8.5/lib/fuse_misc.h
 ===================================================================
 --- fuse-2.8.5.orig/lib/fuse_misc.h
@@ -12601,7 +13329,7 @@ Index: fuse-2.8.5/lib/fusent_proto.c
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/lib/fusent_proto.c
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,33 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
 +  Copyright (C) 2011  The FUSE-NT Authors
@@ -12610,7 +13338,10 @@ Index: fuse-2.8.5/lib/fusent_proto.c
 +  See the file LGPLv2.txt.
 +*/
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
++#include <ddk/ntddk.h>
++#include <ddk/ntifs.h>
++
 +#include "fusent_proto.h"
 +
 +// Takes a FUSE_CREATE_REQ and finds the variably-located fields:
@@ -12631,12 +13362,12 @@ Index: fuse-2.8.5/lib/fusent_proto.c
 +	*outbufp = (uint8_t *)(buflenp + 1);
 +}
 +
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 Index: fuse-2.8.5/lib/fusent_routines.c
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/lib/fusent_routines.c
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,70 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
 +  Copyright (C) 2011  The FUSE-NT Authors
@@ -12645,7 +13376,14 @@ Index: fuse-2.8.5/lib/fusent_routines.c
 +  See the file LGPLv2.txt.
 +*/
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
++
++#define __INTERLOCKED_DECLARED 1
++#include <ddk/ntddk.h>
++#include <ddk/ntifs.h>
++
++#include <ddk/dderror.h>
++
 +#include "fusent_routines.h"
 +
 +// Decodes an IRP (and associated IO stack) to locate the current stack entry
@@ -12677,7 +13415,7 @@ Index: fuse-2.8.5/lib/fusent_routines.c
 +	char *in = src, *out = dst;
 +	size_t inb = s_len, outb = d_len;
 +
-+	if (iconv(cd, &in, &inb, &out, &outb) == -1) goto close_cd;
++	if (iconv(cd, (const char **)&in, &inb, &out, &outb) == -1) goto close_cd;
 +
 +	res = d_len - outb;
 +
@@ -12699,16 +13437,26 @@ Index: fuse-2.8.5/lib/fusent_routines.c
 +	wintime->QuadPart = tmp;
 +}
 +
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 Index: fuse-2.8.5/lib/fuse_session.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/fuse_session.c
 +++ fuse-2.8.5/lib/fuse_session.c
-@@ -5,41 +5,45 @@
+@@ -1,45 +1,55 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
    This program can be distributed under the terms of the GNU LGPLv2.
    See the file COPYING.LIB
  */
  
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++# include <pthread.h>
++#endif
++
  #include "fuse_i.h"
  #include "fuse_misc.h"
  #include "fuse_common_compat.h"
@@ -12725,7 +13473,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  
  	struct fuse_session *se;
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	HANDLE fd;
 +#else
  	int fd;
@@ -12750,7 +13498,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  	se->op = *op;
  	se->data = data;
  
-@@ -99,100 +103,118 @@ void fuse_session_exit(struct fuse_sessi
+@@ -99,100 +109,118 @@ void fuse_session_exit(struct fuse_sessi
  void fuse_session_reset(struct fuse_session *se)
  {
  	if (se->op.exit)
@@ -12773,7 +13521,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  
 -static struct fuse_chan *fuse_chan_new_common(struct fuse_chan_ops *op, int fd,
 +static struct fuse_chan *fuse_chan_new_common(struct fuse_chan_ops *op,
-+#if defined __CYGWIN__
++#if defined _WIN32
 +					      HANDLE fd,
 +#else
 +					      int fd,
@@ -12797,7 +13545,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  	return ch;
  }
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op, HANDLE fd,
 +				size_t bufsize, void *data)
 +#else
@@ -12808,7 +13556,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  	return fuse_chan_new_common(op, fd, bufsize, data, 0);
  }
  
-+#if !defined __CYGWIN__
++#if !defined _WIN32
  struct fuse_chan *fuse_chan_new_compat24(struct fuse_chan_ops_compat24 *op,
  					 int fd, size_t bufsize, void *data)
  {
@@ -12817,7 +13565,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  }
 +#endif
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +HANDLE fuse_chan_fd(struct fuse_chan *ch)
 +#else
  int fuse_chan_fd(struct fuse_chan *ch)
@@ -12844,7 +13592,7 @@ Index: fuse-2.8.5/lib/fuse_session.c
  int fuse_chan_recv(struct fuse_chan **chp, char *buf, size_t size)
  {
  	struct fuse_chan *ch = *chp;
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  	if (ch->compat)
  		return ((struct fuse_chan_ops_compat24 *) &ch->op)
  			->receive(ch, buf, size);
@@ -12874,7 +13622,7 @@ Index: fuse-2.8.5/lib/helper.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/helper.c
 +++ fuse-2.8.5/lib/helper.c
-@@ -1,57 +1,62 @@
+@@ -1,57 +1,68 @@
  /*
    FUSE: Filesystem in Userspace
    Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -12883,6 +13631,12 @@ Index: fuse-2.8.5/lib/helper.c
    See the file COPYING.LIB.
  */
  
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++# include <pthread.h>
++#endif
++
  #include "config.h"
  #include "fuse_i.h"
  #include "fuse_misc.h"
@@ -12913,8 +13667,8 @@ Index: fuse-2.8.5/lib/helper.c
  	char *mountpoint;
  };
  
-+#ifdef __CYGWIN__
-+extern const char *fusent_argv0;
++#ifdef _WIN32
++extern char *fusent_argv0;
 +#endif
 +
  #define FUSE_HELPER_OPT(t, p) { t, offsetof(struct helper_opts, p), 1 }
@@ -12937,7 +13691,7 @@ Index: fuse-2.8.5/lib/helper.c
  	FUSE_OPT_KEY("fsname=",		FUSE_OPT_KEY_KEEP),
  	FUSE_OPT_KEY("subtype=",	FUSE_OPT_KEY_KEEP),
  	FUSE_OPT_END
-@@ -89,46 +94,53 @@ static int fuse_helper_opt_proc(void *da
+@@ -89,46 +100,53 @@ static int fuse_helper_opt_proc(void *da
  				struct fuse_args *outargs)
  {
  	struct helper_opts *hopts = data;
@@ -12958,7 +13712,7 @@ Index: fuse-2.8.5/lib/helper.c
  	case FUSE_OPT_KEY_NONOPT:
  		if (!hopts->mountpoint) {
  			char mountpoint[PATH_MAX];
-+#if defined __CYGWIN__
++#if defined _WIN32
 +			// We don't normalize mountpoints for Windows; for now we expect only
 +			// drive letter mounts (e.g., "F:") -- realpath() falls over on these.
 +			strncpy(mountpoint, arg, PATH_MAX-1);
@@ -12991,19 +13745,42 @@ Index: fuse-2.8.5/lib/helper.c
  		basename = progname;
  	else if (basename[1] != '\0')
  		basename++;
-@@ -178,113 +190,139 @@ err:
+@@ -162,216 +180,261 @@ int fuse_parse_cmdline(struct fuse_args
+ 			goto err;
+ 	}
+ 	if (mountpoint)
+ 		*mountpoint = hopts.mountpoint;
+ 	else
+ 		free(hopts.mountpoint);
+ 
+ 	if (multithreaded)
+ 		*multithreaded = !hopts.singlethread;
+ 	if (foreground)
+ 		*foreground = hopts.foreground;
+ 	return 0;
+ 
+ err:
+ 	free(hopts.mountpoint);
+ 	return -1;
  }
  
  int fuse_daemonize(int foreground)
  {
++#ifndef _WIN32  /* Fuse-NT */
  	int res;
++#endif
  
  	if (!foreground) {
++#ifdef _WIN32  /* Fuse-NT */
++		fprintf(stderr, "fuse: can't daemonize on windows, staying "
++		    "in foreground\n");
++#else
  		res = daemon(0, 0);
  		if (res == -1) {
  			perror("fuse: failed to daemonize program\n");
  			return -1;
  		}
++#endif
  	}
  	return 0;
  }
@@ -13013,7 +13790,7 @@ Index: fuse-2.8.5/lib/helper.c
  {
  	struct fuse_chan *ch;
 +
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	HANDLE fd;
 +
 +	int err = fusent_kern_mount(mountpoint, args, &fd);
@@ -13052,7 +13829,7 @@ Index: fuse-2.8.5/lib/helper.c
  
  static void fuse_unmount_common(const char *mountpoint, struct fuse_chan *ch)
  {
-+#if !defined __CYGWIN__
++#if !defined _WIN32
  	int fd = ch ? fuse_chan_fd(ch) : -1;
 +#else
 +	if (!ch) {
@@ -13076,7 +13853,7 @@ Index: fuse-2.8.5/lib/helper.c
  			       size_t op_size,
  			       char **mountpoint,
  			       int *multithreaded,
-+#if defined __CYGWIN__
++#if defined _WIN32
 +			       HANDLE *fd,
 +#else
  			       int *fd,
@@ -13106,15 +13883,15 @@ Index: fuse-2.8.5/lib/helper.c
  		goto err_unmount;
  
 +	// Skip daemonizing on Cygwin for debugging:
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  	res = fuse_daemonize(foreground);
  	if (res == -1)
  		goto err_unmount;
-+#endif
  
  	res = fuse_set_signal_handlers(fuse_get_session(fuse));
  	if (res == -1)
  		goto err_unmount;
++#endif
  
  	if (fd)
  		*fd = fuse_chan_fd(ch);
@@ -13131,8 +13908,20 @@ Index: fuse-2.8.5/lib/helper.c
  }
  
  struct fuse *fuse_setup(int argc, char *argv[],
-@@ -302,76 +340,86 @@ static void fuse_teardown_common(struct
+ 			const struct fuse_operations *op, size_t op_size,
+ 			char **mountpoint, int *multithreaded, void *user_data)
+ {
+ 	return fuse_setup_common(argc, argv, op, op_size, mountpoint,
+ 				 multithreaded, NULL, user_data, 0);
+ }
+ 
+ static void fuse_teardown_common(struct fuse *fuse, char *mountpoint)
+ {
+ 	struct fuse_session *se = fuse_get_session(fuse);
+ 	struct fuse_chan *ch = fuse_session_next_chan(se, NULL);
++#ifndef _WIN32
  	fuse_remove_signal_handlers(se);
++#endif
  	fuse_unmount_common(mountpoint, ch);
  	fuse_destroy(fuse);
  	free(mountpoint);
@@ -13152,7 +13941,7 @@ Index: fuse-2.8.5/lib/helper.c
  	int multithreaded;
  	int res;
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +	fusent_argv0 = strdup(argv[0]);
 +	fusent_translate_setup();
 +#endif
@@ -13167,7 +13956,7 @@ Index: fuse-2.8.5/lib/helper.c
  		res = fuse_loop(fuse);
  
  	fuse_teardown_common(fuse, mountpoint);
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +	fusent_translate_teardown();
 +	free(fusent_argv0);
 +#endif
@@ -13196,7 +13985,7 @@ Index: fuse-2.8.5/lib/helper.c
  	return FUSE_VERSION;
  }
  
-+#ifndef __CYGWIN__
++#ifndef _WIN32
 +
  #include "fuse_compat.h"
  
@@ -13218,7 +14007,7 @@ Index: fuse-2.8.5/lib/helper.c
  				int *fd)
  {
  	return fuse_setup_common(argc, argv, (struct fuse_operations *) op,
-@@ -434,20 +482,22 @@ int fuse_main_real_compat25(int argc, ch
+@@ -434,20 +497,22 @@ int fuse_main_real_compat25(int argc, ch
  {
  	return fuse_main_common(argc, argv, (struct fuse_operations *) op,
  				op_size, NULL, 25);
@@ -13240,50 +14029,12 @@ Index: fuse-2.8.5/lib/helper.c
  FUSE_SYMVER(".symver fuse_main_real_compat25,fuse_main_real@FUSE_2.5");
  FUSE_SYMVER(".symver fuse_mount_compat25,fuse_mount@FUSE_2.5");
 +
-+#endif /* __CYGWIN__ */
-Index: fuse-2.8.5/lib/Makefile.am
-===================================================================
---- fuse-2.8.5.orig/lib/Makefile.am
-+++ fuse-2.8.5/lib/Makefile.am
-@@ -16,29 +16,32 @@ iconv_source = modules/iconv.c
- else
- iconv_source =
- endif
- 
- libfuse_la_SOURCES = 		\
- 	fuse.c			\
- 	fuse_i.h		\
- 	fuse_kern_chan.c	\
- 	fuse_loop.c		\
- 	fuse_loop_mt.c		\
- 	fuse_lowlevel.c		\
- 	fuse_misc.h		\
- 	fuse_mt.c		\
- 	fuse_opt.c		\
- 	fuse_session.c		\
- 	fuse_signals.c		\
- 	cuse_lowlevel.c		\
- 	helper.c		\
- 	modules/subdir.c	\
- 	$(iconv_source)		\
--	$(mount_source)
-+	$(mount_source)		\
-+	st.c			\
-+	fusent_routines.c	\
-+	fusent_proto.c
- 
- libfuse_la_LDFLAGS = @libfuse_libs@ -version-number 2:8:5 \
- 	-Wl,--version-script,$(srcdir)/fuse_versionscript
- 
- libulockmgr_la_SOURCES = ulockmgr.c
- libulockmgr_la_LDFLAGS = -pthread -version-number 1:0:1
- 
- EXTRA_DIST = fuse_versionscript
++#endif /* _WIN32 */
 Index: fuse-2.8.5/lib/mount.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/mount.c
 +++ fuse-2.8.5/lib/mount.c
-@@ -1,35 +1,42 @@
+@@ -1,85 +1,109 @@
  /*
    FUSE: Filesystem in Userspace
    Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -13292,6 +14043,12 @@ Index: fuse-2.8.5/lib/mount.c
    See the file COPYING.LIB.
  */
  
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++# include <pthread.h>
++#endif
++
  #include "config.h"
  #include "fuse_i.h"
  #include "fuse_misc.h"
@@ -13300,8 +14057,13 @@ Index: fuse-2.8.5/lib/mount.c
 +#include "fuse_fs_defines.h"
  #include "mount_util.h"
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
++# define __INTERLOCKED_DECLARED 1
++# include <ddk/ntddk.h>
++# include <ddk/ntifs.h>
++
 +# include "fusent_proto.h"
++# include "fusent_routines.h"
 +# include <ctype.h>
 +# include <wchar.h>
 +#endif
@@ -13312,11 +14074,18 @@ Index: fuse-2.8.5/lib/mount.c
  #include <stddef.h>
  #include <fcntl.h>
  #include <errno.h>
- #include <sys/poll.h>
- #include <sys/socket.h>
- #include <sys/un.h>
- #include <sys/wait.h>
- #include <sys/mount.h>
+-#include <sys/poll.h>
+-#include <sys/socket.h>
+-#include <sys/un.h>
+-#include <sys/wait.h>
+-#include <sys/mount.h>
++#ifndef _WIN32  /* Fuse-NT */
++# include <sys/poll.h>
++# include <sys/socket.h>
++# include <sys/un.h>
++# include <sys/wait.h>
++# include <sys/mount.h>
++#endif
  
  #define FUSERMOUNT_PROG		"fusermount"
  #define FUSE_COMMFD_ENV		"_FUSE_COMMFD"
@@ -13326,7 +14095,16 @@ Index: fuse-2.8.5/lib/mount.c
  #endif
  
  #ifndef MS_DIRSYNC
-@@ -46,40 +53,44 @@ enum {
+ #define MS_DIRSYNC 128
+ #endif
+ 
+ enum {
+ 	KEY_KERN_FLAG,
+ 	KEY_KERN_OPT,
+ 	KEY_FUSERMOUNT_OPT,
+ 	KEY_SUBTYPE_OPT,
+ 	KEY_MTAB_OPT,
+ 	KEY_ALLOW_ROOT,
  	KEY_RO,
  	KEY_HELP,
  	KEY_VERSION,
@@ -13347,7 +14125,7 @@ Index: fuse-2.8.5/lib/mount.c
  	char *kernel_opts;
  };
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +char *fusent_argv0;
 +#endif
 +
@@ -13371,7 +14149,120 @@ Index: fuse-2.8.5/lib/mount.c
  	FUSE_OPT_KEY("default_permissions",	KEY_KERN_OPT),
  	FUSE_OPT_KEY("max_read=",		KEY_KERN_OPT),
  	FUSE_OPT_KEY("max_read=",		FUSE_OPT_KEY_KEEP),
-@@ -248,91 +259,101 @@ static int receive_fd(int fd)
+@@ -102,56 +126,58 @@ static const struct fuse_opt fuse_mount_
+ 	FUSE_OPT_KEY("--help",			KEY_HELP),
+ 	FUSE_OPT_KEY("-V",			KEY_VERSION),
+ 	FUSE_OPT_KEY("--version",		KEY_VERSION),
+ 	FUSE_OPT_END
+ };
+ 
+ static void mount_help(void)
+ {
+ 	fprintf(stderr,
+ "    -o allow_other         allow access to other users\n"
+ "    -o allow_root          allow access to root\n"
+ "    -o nonempty            allow mounts over non-empty file/dir\n"
+ "    -o default_permissions enable permission checking by kernel\n"
+ "    -o fsname=NAME         set filesystem name\n"
+ "    -o subtype=NAME        set filesystem type\n"
+ "    -o large_read          issue large read requests (2.4 only)\n"
+ "    -o max_read=N          set maximum size of read requests\n"
+ "\n");
+ }
+ 
++#ifndef _WIN32
+ static void exec_fusermount(const char *argv[])
+ {
+ 	execv(FUSERMOUNT_DIR "/" FUSERMOUNT_PROG, (char **) argv);
+ 	execvp(FUSERMOUNT_PROG, (char **) argv);
+ }
+ 
+ static void mount_version(void)
+ {
+ 	int pid = fork();
+ 	if (!pid) {
+ 		const char *argv[] = { FUSERMOUNT_PROG, "--version", NULL };
+ 		exec_fusermount(argv);
+ 		_exit(1);
+ 	} else if (pid != -1)
+ 		waitpid(pid, NULL, 0);
+ }
++#endif
+ 
+ struct mount_flags {
+ 	const char *opt;
+ 	unsigned long flag;
+ 	int on;
+ };
+ 
+ static struct mount_flags mount_flags[] = {
+ 	{"rw",	    MS_RDONLY,	    0},
+ 	{"ro",	    MS_RDONLY,	    1},
+ 	{"suid",    MS_NOSUID,	    0},
+ 	{"nosuid",  MS_NOSUID,	    1},
+ 	{"dev",	    MS_NODEV,	    0},
+ 	{"nodev",   MS_NODEV,	    1},
+ 	{"exec",    MS_NOEXEC,	    0},
+ 	{"noexec",  MS_NOEXEC,	    1},
+ 	{"async",   MS_SYNCHRONOUS, 0},
+ 	{"sync",    MS_SYNCHRONOUS, 1},
+ 	{"atime",   MS_NOATIME,	    0},
+ 	{"noatime", MS_NOATIME,	    1},
+@@ -197,47 +223,52 @@ static int fuse_mount_opt_proc(void *dat
+ 		return 0;
+ 
+ 	case KEY_KERN_OPT:
+ 		return fuse_opt_add_opt(&mo->kernel_opts, arg);
+ 
+ 	case KEY_FUSERMOUNT_OPT:
+ 		return fuse_opt_add_opt_escaped(&mo->fusermount_opts, arg);
+ 
+ 	case KEY_SUBTYPE_OPT:
+ 		return fuse_opt_add_opt(&mo->subtype_opt, arg);
+ 
+ 	case KEY_MTAB_OPT:
+ 		return fuse_opt_add_opt(&mo->mtab_opts, arg);
+ 
+ 	case KEY_HELP:
+ 		mount_help();
+ 		mo->ishelp = 1;
+ 		break;
+ 
+ 	case KEY_VERSION:
++#ifdef _WIN32
++		printf("fusermount version: %s\n", PACKAGE_VERSION);
++#else
+ 		mount_version();
++#endif
+ 		mo->ishelp = 1;
+ 		break;
+ 	}
+ 	return 1;
+ }
+ 
++#ifndef _WIN32
+ /* return value:
+  * >= 0	 => fd
+  * -1	 => error
+  */
+ static int receive_fd(int fd)
+ {
+ 	struct msghdr msg;
+ 	struct iovec iov;
+ 	char buf[1];
+ 	int rv;
+ 	size_t ccmsg[CMSG_SPACE(sizeof(int)) / sizeof(size_t)];
+ 	struct cmsghdr *cmsg;
+ 
+ 	iov.iov_base = buf;
+ 	iov.iov_len = 1;
+ 
+ 	msg.msg_name = 0;
+ 	msg.msg_namelen = 0;
+ 	msg.msg_iov = &iov;
+ 	msg.msg_iovlen = 1;
+@@ -247,88 +278,98 @@ static int receive_fd(int fd)
+ 	msg.msg_controllen = sizeof(ccmsg);
  
  	while(((rv = recvmsg(fd, &msg, 0)) == -1) && errno == EINTR);
  	if (rv == -1) {
@@ -13391,8 +14282,9 @@ Index: fuse-2.8.5/lib/mount.c
  	}
  	return *(int*)CMSG_DATA(cmsg);
  }
++#endif
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +void fuse_kern_unmount(const char *mountpoint, HANDLE fd)
 +{
 +	// TODO(cemeyer)
@@ -13451,12 +14343,11 @@ Index: fuse-2.8.5/lib/mount.c
  }
 +#endif
  
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  void fuse_unmount_compat22(const char *mountpoint)
  {
  	fuse_kern_unmount(mountpoint, -1);
  }
-+#endif
  
  static int fuse_mount_fusermount(const char *mountpoint, const char *opts,
  				 int quiet)
@@ -13473,14 +14364,7 @@ Index: fuse-2.8.5/lib/mount.c
  	res = socketpair(PF_UNIX, SOCK_STREAM, 0, fds);
  	if(res == -1) {
  		perror("fuse: socketpair() failed");
- 		return -1;
- 	}
- 
- 	pid = fork();
-@@ -368,43 +389,46 @@ static int fuse_mount_fusermount(const c
- 		snprintf(env, sizeof(env), "%i", fds[0]);
- 		setenv(FUSE_COMMFD_ENV, env, 1);
- 		exec_fusermount(argv);
+@@ -371,40 +412,42 @@ static int fuse_mount_fusermount(const c
  		perror("fuse: failed to exec fusermount");
  		_exit(1);
  	}
@@ -13498,7 +14382,6 @@ Index: fuse-2.8.5/lib/mount.c
  	return fuse_mount_fusermount(mountpoint, opts, 0);
  }
  
-+#ifndef __CYGWIN__
  static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
  			  const char *mnt_opts)
  {
@@ -13524,7 +14407,7 @@ Index: fuse-2.8.5/lib/mount.c
  		return -1;
  	}
  
-@@ -435,160 +459,240 @@ static int fuse_mount_sys(const char *mn
+@@ -435,160 +478,240 @@ static int fuse_mount_sys(const char *mn
  	source = malloc((mo->fsname ? strlen(mo->fsname) : 0) +
  			(mo->subtype ? strlen(mo->subtype) : 0) +
  			strlen(devname) + 32);
@@ -13624,7 +14507,7 @@ Index: fuse-2.8.5/lib/mount.c
  	return 0;
  }
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +int fusent_kern_mount(const char *mountpoint, struct fuse_args *args, HANDLE *fd)
 +#else
  int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
@@ -13657,7 +14540,7 @@ Index: fuse-2.8.5/lib/mount.c
  	if (mo.mtab_opts &&  fuse_opt_add_opt(&mnt_opts, mo.mtab_opts) == -1)
  		goto out;
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +	if (!mountpoint || strlen(mountpoint) != 2 || !isalpha((int)mountpoint[0]) ||
 +			mountpoint[1] != ':') {
 +		fprintf(stderr, "fusent: mountpoint is only allowed to be an (unused) drive, e.g. `U:'\n");
@@ -13723,11 +14606,11 @@ Index: fuse-2.8.5/lib/mount.c
 +		goto out;
 +	}
 +
-+	if (!DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, devnameb)) {
++	if (!DefineDosDeviceA(DDD_RAW_TARGET_PATH, mountpoint, devnameb)) {
 +		// Drive letter creation failed:
 +		DWORD winerr = GetLastError();
-+		fprintf(stderr, "fusent: got error mounting device on `%s': %08x\n",
-+				mountpoint, winerr);
++		fprintf(stderr, "fusent: got error mounting device on `%s': %08jx\n",
++				mountpoint, (uintmax_t)winerr);
 +		goto out;
 +	}
 +	
@@ -13778,7 +14661,10 @@ Index: fuse-2.8.5/lib/mount_util.c
 ===================================================================
 --- fuse-2.8.5.orig/lib/mount_util.c
 +++ fuse-2.8.5/lib/mount_util.c
-@@ -4,40 +4,41 @@
+@@ -1,43 +1,46 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
  
    This program can be distributed under the terms of the GNU LGPLv2.
    See the file COPYING.LIB.
@@ -13793,13 +14679,18 @@ Index: fuse-2.8.5/lib/mount_util.c
  #include <errno.h>
  #include <fcntl.h>
  #include <limits.h>
- #include <mntent.h>
+-#include <mntent.h>
  #include <sys/stat.h>
- #include <sys/wait.h>
- #include <sys/mount.h>
+-#include <sys/wait.h>
+-#include <sys/mount.h>
++#ifndef _WIN32  /* Fuse-NT */
++# include <mntent.h>
++# include <sys/wait.h>
++# include <sys/mount.h>
++#endif
  #include <sys/param.h>
  
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  static int mtab_needs_update(const char *mnt)
  {
  	int res;
@@ -13820,7 +14711,7 @@ Index: fuse-2.8.5/lib/mount_util.c
  	res = lstat(_PATH_MOUNTED, &stbuf);
  	if (res == -1) {
  		if (errno == ENOENT)
-@@ -342,20 +343,21 @@ int fuse_mnt_check_empty(const char *pro
+@@ -342,20 +345,21 @@ int fuse_mnt_check_empty(const char *pro
  	}
  	return 0;
  }
@@ -13841,15 +14732,17 @@ Index: fuse-2.8.5/lib/mount_util.c
  	fclose(f);
  	return 0;
  }
-+#endif /* !__CYGWIN__ */
++#endif /* !_WIN32 */
 Index: fuse-2.8.5/lib/st.c
 ===================================================================
 --- /dev/null
 +++ fuse-2.8.5/lib/st.c
-@@ -0,0 +1,1316 @@
+@@ -0,0 +1,1320 @@
 +/* This is a public domain general purpose hash table package written by Peter Moore @ UCB. */
 +
 +/* static	char	sccsid[] = "@(#) st.c 5.1 89/12/14 Crucible"; */
++
++#ifdef _WIN32  /* Only used by Fuse-NT */
 +
 +#include "st.h"
 +
@@ -15163,3 +16056,1357 @@ Index: fuse-2.8.5/lib/st.c
 +{
 +    return (st_index_t)n;
 +}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/include/fuse.h
+===================================================================
+--- fuse-2.8.5.orig/include/fuse.h
++++ fuse-2.8.5/include/fuse.h
+@@ -13,42 +13,46 @@
+  *
+  * This file defines the library interface of FUSE
+  *
+  * IMPORTANT: you should define FUSE_USE_VERSION before including this
+  * header.  To use the newest API define it to 26 (recommended for any
+  * new application), to use the old API define it to 21 (default) 22
+  * or 25, to use the even older 1.X API define it to 11.
+  */
+ 
+ #ifndef FUSE_USE_VERSION
+ #define FUSE_USE_VERSION 21
+ #endif
+ 
+ #include "fuse_common.h"
+ 
+ #include <fcntl.h>
+ #include <time.h>
+ #include <utime.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
+-#include <sys/statvfs.h>
+-#include <sys/uio.h>
++#ifdef _WIN32
++# include "fusent_compat.h"
++#else
++# include <sys/statvfs.h>
++# include <sys/uio.h>
++#endif
+ 
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+ 
+ /* ----------------------------------------------------------- *
+  * Basic FUSE API					       *
+  * ----------------------------------------------------------- */
+ 
+ /** Handle for a FUSE filesystem */
+ struct fuse;
+ 
+ /** Structure containing a raw command */
+ struct fuse_cmd;
+ 
+ /** Function to add an entry in a readdir() operation
+  *
+  * @param buf the buffer passed to the readdir() operation
+  * @param name the file name of the directory entry
+  * @param stat file attributes, can be NULL
+@@ -362,41 +366,55 @@ struct fuse_operations {
+ 	 * If this method is not implemented or under Linux kernel
+ 	 * versions earlier than 2.6.15, the mknod() and open() methods
+ 	 * will be called instead.
+ 	 *
+ 	 * Introduced in version 2.5
+ 	 */
+ 	int (*create) (const char *, mode_t, struct fuse_file_info *);
+ 
+ 	/**
+ 	 * Change the size of an open file
+ 	 *
+ 	 * This method is called instead of the truncate() method if the
+ 	 * truncation was invoked from an ftruncate() system call.
+ 	 *
+ 	 * If this method is not implemented or under Linux kernel
+ 	 * versions earlier than 2.6.15, the truncate() method will be
+ 	 * called instead.
+ 	 *
+ 	 * Introduced in version 2.5
+ 	 */
++/* Begin Fuse-NT */
++#ifdef ftruncate
++# if ftruncate == ftruncate64
++#  define set_ftruncate64 1
++#  undef ftruncate
++# else
++#  error weird ftruncate!
++# endif
++#endif
+ 	int (*ftruncate) (const char *, off_t, struct fuse_file_info *);
++#if set_ftruncate64 == 1
++# define ftruncate ftruncate64
++# undef set_ftruncate64
++#endif
++/* End Fuse-NT */
+ 
+ 	/**
+ 	 * Get attributes from an open file
+ 	 *
+ 	 * This method is called instead of the getattr() method if the
+ 	 * file information is available.
+ 	 *
+ 	 * Currently this is only called after the create() method if that
+ 	 * is implemented (see above).  Later it may be called for
+ 	 * invocations of fstat() too.
+ 	 *
+ 	 * Introduced in version 2.5
+ 	 */
+ 	int (*fgetattr) (const char *, struct stat *, struct fuse_file_info *);
+ 
+ 	/**
+ 	 * Perform POSIX file locking operation
+ 	 *
+ 	 * The cmd argument will be either F_GETLK, F_SETLK or F_SETLKW.
+ 	 *
+Index: fuse-2.8.5/include/fusent_compat.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/include/fusent_compat.h
+@@ -0,0 +1,91 @@
++#ifndef _FUSENT_COMPAT_H_
++#define _FUSENT_COMPAT_H_
++
++#include <stdbool.h>
++#include <stdint.h>
++#include <unistd.h>
++
++/* Unix definitions missing from MingW headers: */
++
++typedef uintptr_t uid_t;
++typedef uintptr_t gid_t;
++
++#if __WORDSIZE == 32
++# define SWORD_TYPE int
++#else
++# define SWORD_TYPE long int
++#endif
++
++struct statfs {
++	SWORD_TYPE	f_type;
++	SWORD_TYPE	f_bsize;
++	uint64_t	f_blocks;
++	uint64_t	f_bfree;
++	uint64_t	f_bavail;
++
++	uint64_t	f_files;
++	uint64_t	f_ffree;
++	uint32_t	f_fsid;
++	SWORD_TYPE	f_namelen;
++	SWORD_TYPE	f_frsize;
++	SWORD_TYPE	f_spare[5];
++};
++#undef SWORD_TYPE
++
++struct statvfs {
++	uint32_t	f_bsize;
++	uint32_t	f_frsize;
++	uint64_t	f_blocks;
++	uint64_t	f_bfree;
++	uint64_t	f_bavail;
++	uint64_t	f_files;
++	uint64_t	f_ffree;
++	uint64_t	f_favail;
++	uint32_t	f_fsid;
++	uint32_t	f_flag;
++	uint32_t	f_namemax;
++};
++
++#define F_RDLCK		0
++#define F_WRLCK		1
++#define F_UNLCK		2
++
++#define F_EXLCK		4
++#define F_SHLCK		8
++
++#define F_GETLK		5
++#define F_SETLK		6
++#define F_SETLKW	7
++
++struct flock {
++	short		l_type;
++	short		l_whence;
++	off_t		l_start;
++	off_t		l_len;
++	pid_t		l_pid;
++};
++
++/* Arbitrary high number ... */
++#define ESTALE		251
++
++/*
++ * Windows definitions from userspace headers that conflict with kernelspace
++ * headers:
++ */
++
++typedef void * HANDLE;
++typedef unsigned long DWORD;
++
++#define CreateEvent __imp_CreateEventA
++extern HANDLE	CreateEvent(void *, bool, bool, void *);
++extern void	CloseHandle(HANDLE);
++extern DWORD	WaitForSingleObject(HANDLE, DWORD ms);
++extern bool	DefineDosDeviceA(DWORD flags, const char *dname,
++		    const char *target);
++extern DWORD	GetLastError(void);
++
++#define INFINITE 0xffffffff
++#define WAIT_OBJECT_0 ((STATUS_WAIT_0) + 0)
++#define DDD_RAW_TARGET_PATH 0x00000001
++
++#endif
+Index: fuse-2.8.5/example/cusexmp.c
+===================================================================
+--- fuse-2.8.5.orig/example/cusexmp.c
++++ fuse-2.8.5/example/cusexmp.c
+@@ -1,31 +1,33 @@
+ /*
+   CUSE example: Character device in Userspace
+   Copyright (C) 2008-2009  SUSE Linux Products GmbH
+   Copyright (C) 2008-2009  Tejun Heo <tj@kernel.org>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` cusexmp.c -o cusexmp
+ */
+ 
++#ifndef _WIN32
++
+ #define FUSE_USE_VERSION 29
+ 
+ #include <cuse_lowlevel.h>
+ #include <fuse_opt.h>
+ #include <stddef.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <errno.h>
+ 
+ #include "fioc.h"
+ 
+ static void *cusexmp_buf;
+ static size_t cusexmp_size;
+ 
+ static const char *usage =
+ "usage: cusexmp [options]\n"
+ "\n"
+ "options:\n"
+@@ -275,20 +277,29 @@ int main(int argc, char **argv)
+ 	}
+ 
+ 	if (!param.is_help) {
+ 		if (!param.dev_name) {
+ 			fprintf(stderr, "Error: device name missing\n");
+ 			return 1;
+ 		}
+ 		strncat(dev_name, param.dev_name, sizeof(dev_name) - 9);
+ 	}
+ 
+ 	memset(&ci, 0, sizeof(ci));
+ 	ci.dev_major = param.major;
+ 	ci.dev_minor = param.minor;
+ 	ci.dev_info_argc = 1;
+ 	ci.dev_info_argv = dev_info_argv;
+ 	ci.flags = CUSE_UNRESTRICTED_IOCTL;
+ 
+ 	return cuse_lowlevel_main(args.argc, args.argv, &ci, &cusexmp_clop,
+ 				  NULL);
+ }
++
++#else  /* _WIN32 */
++
++int main(int argc, char *argv[])
++{
++	return 0;
++}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/example/fioc.c
+===================================================================
+--- fuse-2.8.5.orig/example/fioc.c
++++ fuse-2.8.5/example/fioc.c
+@@ -1,31 +1,33 @@
+ /*
+   FUSE fioc: FUSE ioctl example
+   Copyright (C) 2008       SUSE Linux Products GmbH
+   Copyright (C) 2008       Tejun Heo <teheo@suse.de>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` fioc.c -o fioc
+ */
+ 
++#ifndef _WIN32
++
+ #define FUSE_USE_VERSION 26
+ 
+ #include <fuse.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <time.h>
+ #include <errno.h>
+ 
+ #include "fioc.h"
+ 
+ #define FIOC_NAME	"fioc"
+ 
+ enum {
+ 	FIOC_NONE,
+ 	FIOC_ROOT,
+ 	FIOC_FILE,
+ };
+ 
+@@ -192,20 +194,29 @@ static int fioc_ioctl(const char *path,
+ 		return 0;
+ 	}
+ 
+ 	return -EINVAL;
+ }
+ 
+ static struct fuse_operations fioc_oper = {
+ 	.getattr	= fioc_getattr,
+ 	.readdir	= fioc_readdir,
+ 	.truncate	= fioc_truncate,
+ 	.open		= fioc_open,
+ 	.read		= fioc_read,
+ 	.write		= fioc_write,
+ 	.ioctl		= fioc_ioctl,
+ };
+ 
+ int main(int argc, char *argv[])
+ {
+ 	return fuse_main(argc, argv, &fioc_oper, NULL);
+ }
++
++#else  /* _WIN32 */
++
++int main(int argc, char *argv[])
++{
++	return 0;
++}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/example/fioclient.c
+===================================================================
+--- fuse-2.8.5.orig/example/fioclient.c
++++ fuse-2.8.5/example/fioclient.c
+@@ -1,31 +1,33 @@
+ /*
+   FUSE fioclient: FUSE ioctl example client
+   Copyright (C) 2008       SUSE Linux Products GmbH
+   Copyright (C) 2008       Tejun Heo <teheo@suse.de>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall fioclient.c -o fioclient
+ */
+ 
++#ifndef _WIN32
++
+ #include <sys/types.h>
+ #include <sys/fcntl.h>
+ #include <sys/stat.h>
+ #include <sys/ioctl.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <ctype.h>
+ #include <errno.h>
+ #include "fioc.h"
+ 
+ const char *usage =
+ "Usage: fioclient FIOC_FILE COMMAND\n"
+ "\n"
+ "COMMANDS\n"
+ "  s [SIZE]     : get size if SIZE is omitted, set size otherwise\n"
+ "  r SIZE [OFF] : read SIZE bytes @ OFF (dfl 0) and output to stdout\n"
+ "  w SIZE [OFF] : write SIZE bytes @ OFF (dfl 0) from stdin\n"
+ "\n";
+ 
+ static int do_rw(int fd, int is_read, size_t size, off_t offset,
+@@ -103,20 +105,29 @@ int main(int argc, char **argv)
+ 				return 1;
+ 			}
+ 		}
+ 		return 0;
+ 
+ 	case 'r':
+ 	case 'w':
+ 		rc = do_rw(fd, cmd == 'r', param[0], param[1],
+ 			   &prev_size, &new_size);
+ 		if (rc < 0)
+ 			return 1;
+ 		fprintf(stderr, "transferred %d bytes (%zu -> %zu)\n",
+ 			rc, prev_size, new_size);
+ 		return 0;
+ 	}
+ 
+  usage:
+ 	fprintf(stderr, usage);
+ 	return 1;
+ }
++
++#else  /* _WIN32 */
++
++int main(int argc, char *argv[])
++{
++	return 0;
++}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/example/fsel.c
+===================================================================
+--- fuse-2.8.5.orig/example/fsel.c
++++ fuse-2.8.5/example/fsel.c
+@@ -1,43 +1,51 @@
+ /*
+   FUSE fsel: FUSE select example
+   Copyright (C) 2008       SUSE Linux Products GmbH
+   Copyright (C) 2008       Tejun Heo <teheo@suse.de>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` fsel.c -o fsel
+ */
+ 
+ #define FUSE_USE_VERSION 29
+ 
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++#endif
++
+ #include <fuse.h>
+ #include <unistd.h>
+ #include <ctype.h>
+ #include <string.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <errno.h>
+ #include <time.h>
+ #include <pthread.h>
+-#include <poll.h>
++#ifdef _WIN32
++# define POLLIN 1
++#else
++# include <poll.h>
++#endif
+ 
+ /*
+  * fsel_open_mask is used to limit the number of opens to 1 per file.
+  * This is to use file index (0-F) as fh as poll support requires
+  * unique fh per open file.  Lifting this would require proper open
+  * file management.
+  */
+ static unsigned fsel_open_mask;
+ static const char fsel_hex_map[] = "0123456789ABCDEF";
+ static struct fuse *fsel_fuse;	/* needed for poll notification */
+ 
+ #define FSEL_CNT_MAX	10	/* each file can store upto 10 chars */
+ #define FSEL_FILES	16
+ 
+ static pthread_mutex_t fsel_mutex;	/* protects notify_mask and cnt array */
+ static unsigned fsel_poll_notify_mask;	/* poll notification scheduled? */
+ static struct fuse_pollhandle *fsel_poll_handle[FSEL_FILES]; /* poll notify handles */
+ static unsigned fsel_cnt[FSEL_FILES];	/* nbytes stored in each file */
+ 
+ static int fsel_path_index(const char *path)
+Index: fuse-2.8.5/example/fselclient.c
+===================================================================
+--- fuse-2.8.5.orig/example/fselclient.c
++++ fuse-2.8.5/example/fselclient.c
+@@ -1,31 +1,33 @@
+ /*
+   FUSE fselclient: FUSE select example client
+   Copyright (C) 2008       SUSE Linux Products GmbH
+   Copyright (C) 2008       Tejun Heo <teheo@suse.de>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall fselclient.c -o fselclient
+ */
+ 
++#ifndef _WIN32
++
+ #include <sys/select.h>
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <ctype.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <errno.h>
+ 
+ #define FSEL_FILES	16
+ 
+ int main(void)
+ {
+ 	static const char hex_map[FSEL_FILES] = "0123456789ABCDEF";
+ 	int fds[FSEL_FILES];
+ 	int i, nfds;
+ 
+ 	for (i = 0; i < FSEL_FILES; i++) {
+@@ -53,20 +55,29 @@ int main(void)
+ 			perror("select");
+ 			return 1;
+ 		}
+ 
+ 		for (i = 0; i < FSEL_FILES; i++) {
+ 			if (!FD_ISSET(fds[i], &rfds)) {
+ 				printf("_:   ");
+ 				continue;
+ 			}
+ 			printf("%X:", i);
+ 			rc = read(fds[i], buf, sizeof(buf));
+ 			if (rc < 0) {
+ 				perror("read");
+ 				return 1;
+ 			}
+ 			printf("%02d ", rc);
+ 		}
+ 		printf("\n");
+ 	}
+ }
++
++#else  /* _WIN32 */
++
++int main(int argc, char *argv[])
++{
++	return 0;
++}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/example/fusexmp.c
+===================================================================
+--- fuse-2.8.5.orig/example/fusexmp.c
++++ fuse-2.8.5/example/fusexmp.c
+@@ -1,30 +1,32 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` fusexmp.c -o fusexmp
+ */
+ 
++#ifndef _WIN32  /* Fuse-NT */
++
+ #define FUSE_USE_VERSION 26
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ 
+ #ifdef linux
+ /* For pread()/pwrite() */
+ #define _XOPEN_SOURCE 500
+ #endif
+ 
+ #include <fuse.h>
+ #include <stdio.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <dirent.h>
+ #include <errno.h>
+ #include <sys/time.h>
+ #ifdef HAVE_SETXATTR
+@@ -366,20 +368,28 @@ static struct fuse_operations xmp_oper =
+ 	.utimens	= xmp_utimens,
+ 	.open		= xmp_open,
+ 	.read		= xmp_read,
+ 	.write		= xmp_write,
+ 	.statfs		= xmp_statfs,
+ 	.release	= xmp_release,
+ 	.fsync		= xmp_fsync,
+ #ifdef HAVE_SETXATTR
+ 	.setxattr	= xmp_setxattr,
+ 	.getxattr	= xmp_getxattr,
+ 	.listxattr	= xmp_listxattr,
+ 	.removexattr	= xmp_removexattr,
+ #endif
+ };
+ 
+ int main(int argc, char *argv[])
+ {
+ 	umask(0);
+ 	return fuse_main(argc, argv, &xmp_oper, NULL);
+ }
++
++#else  /* _WIN32 */
++
++int main(int argc, char *argv[]) {
++	return 0;
++}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/example/fusexmp_fh.c
+===================================================================
+--- fuse-2.8.5.orig/example/fusexmp_fh.c
++++ fuse-2.8.5/example/fusexmp_fh.c
+@@ -1,30 +1,32 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` -lulockmgr fusexmp_fh.c -o fusexmp_fh
+ */
+ 
++#ifndef _WIN32  /* Fuse-NT */
++
+ #define FUSE_USE_VERSION 26
+ 
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+ 
+ #define _GNU_SOURCE
+ 
+ #include <fuse.h>
+ #include <ulockmgr.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <dirent.h>
+ #include <errno.h>
+ #include <sys/time.h>
+ #ifdef HAVE_SETXATTR
+ #include <sys/xattr.h>
+@@ -476,20 +478,28 @@ static struct fuse_operations xmp_oper =
+ 	.statfs		= xmp_statfs,
+ 	.flush		= xmp_flush,
+ 	.release	= xmp_release,
+ 	.fsync		= xmp_fsync,
+ #ifdef HAVE_SETXATTR
+ 	.setxattr	= xmp_setxattr,
+ 	.getxattr	= xmp_getxattr,
+ 	.listxattr	= xmp_listxattr,
+ 	.removexattr	= xmp_removexattr,
+ #endif
+ 	.lock		= xmp_lock,
+ 
+ 	.flag_nullpath_ok = 1,
+ };
+ 
+ int main(int argc, char *argv[])
+ {
+ 	umask(0);
+ 	return fuse_main(argc, argv, &xmp_oper, NULL);
+ }
++
++#else  /* _WIN32 */
++
++int main(int argc, char *argv[]) {
++	return 0;
++}
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/example/hello_ll.c
+===================================================================
+--- fuse-2.8.5.orig/example/hello_ll.c
++++ fuse-2.8.5/example/hello_ll.c
+@@ -1,30 +1,35 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU GPL.
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` hello_ll.c -o hello_ll
+ */
+ 
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++#endif /* _WIN32 */
++
+ #define FUSE_USE_VERSION 26
+ 
+ #include <fuse_lowlevel.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <assert.h>
+ 
+ static const char *hello_str = "Hello World!\n";
+ static const char *hello_name = "hello";
+ 
+ static int hello_stat(fuse_ino_t ino, struct stat *stbuf)
+ {
+ 	stbuf->st_ino = ino;
+ 	switch (ino) {
+ 	case 1:
+ 		stbuf->st_mode = S_IFDIR | 0755;
+@@ -148,34 +153,40 @@ static struct fuse_lowlevel_ops hello_ll
+ 	.getattr	= hello_ll_getattr,
+ 	.readdir	= hello_ll_readdir,
+ 	.open		= hello_ll_open,
+ 	.read		= hello_ll_read,
+ };
+ 
+ int main(int argc, char *argv[])
+ {
+ 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+ 	struct fuse_chan *ch;
+ 	char *mountpoint;
+ 	int err = -1;
+ 
+ 	if (fuse_parse_cmdline(&args, &mountpoint, NULL, NULL) != -1 &&
+ 	    (ch = fuse_mount(mountpoint, &args)) != NULL) {
+ 		struct fuse_session *se;
+ 
+ 		se = fuse_lowlevel_new(&args, &hello_ll_oper,
+ 				       sizeof(hello_ll_oper), NULL);
+ 		if (se != NULL) {
++#ifdef _WIN32
++			fuse_session_add_chan(se, ch);
++			err = fuse_session_loop(se);
++			fuse_session_remove_chan(ch);
++#else
+ 			if (fuse_set_signal_handlers(se) != -1) {
+ 				fuse_session_add_chan(se, ch);
+ 				err = fuse_session_loop(se);
+ 				fuse_remove_signal_handlers(se);
+ 				fuse_session_remove_chan(ch);
+ 			}
++#endif
+ 			fuse_session_destroy(se);
+ 		}
+ 		fuse_unmount(mountpoint, ch);
+ 	}
+ 	fuse_opt_free_args(&args);
+ 
+ 	return err ? 1 : 0;
+ }
+Index: fuse-2.8.5/example/null.c
+===================================================================
+--- fuse-2.8.5.orig/example/null.c
++++ fuse-2.8.5/example/null.c
+@@ -6,44 +6,49 @@
+   See the file COPYING.
+ 
+   gcc -Wall `pkg-config fuse --cflags --libs` null.c -o null
+ */
+ 
+ #define FUSE_USE_VERSION 26
+ 
+ #include <fuse.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <time.h>
+ #include <errno.h>
+ 
+ static int null_getattr(const char *path, struct stat *stbuf)
+ {
+ 	if(strcmp(path, "/") != 0)
+ 		return -ENOENT;
+ 
+ 	stbuf->st_mode = S_IFREG | 0644;
+ 	stbuf->st_nlink = 1;
++#ifdef _WIN32  /* Fuse-NT */
++	stbuf->st_uid = 0;
++	stbuf->st_gid = 0;
++#else
+ 	stbuf->st_uid = getuid();
+ 	stbuf->st_gid = getgid();
+-	stbuf->st_size = (1ULL << 32); /* 4G */
+ 	stbuf->st_blocks = 0;
++#endif
++	stbuf->st_size = (1ULL << 32); /* 4G */
+ 	stbuf->st_atime = stbuf->st_mtime = stbuf->st_ctime = time(NULL);
+ 
+ 	return 0;
+ }
+ 
+ static int null_truncate(const char *path, off_t size)
+ {
+ 	(void) size;
+ 
+ 	if(strcmp(path, "/") != 0)
+ 		return -ENOENT;
+ 
+ 	return 0;
+ }
+ 
+ static int null_open(const char *path, struct fuse_file_info *fi)
+ {
+ 	(void) fi;
+ 
+ 	if(strcmp(path, "/") != 0)
+Index: fuse-2.8.5/include/fuse_compat.h
+===================================================================
+--- fuse-2.8.5.orig/include/fuse_compat.h
++++ fuse-2.8.5/include/fuse_compat.h
+@@ -48,41 +48,41 @@ struct fuse_operations_compat25 {
+ 	int (*create) (const char *, mode_t, struct fuse_file_info *);
+ 	int (*ftruncate) (const char *, off_t, struct fuse_file_info *);
+ 	int (*fgetattr) (const char *, struct stat *, struct fuse_file_info *);
+ };
+ 
+ struct fuse *fuse_new_compat25(int fd, struct fuse_args *args,
+ 			       const struct fuse_operations_compat25 *op,
+ 			       size_t op_size);
+ 
+ int fuse_main_real_compat25(int argc, char *argv[],
+ 			    const struct fuse_operations_compat25 *op,
+ 			    size_t op_size);
+ 
+ struct fuse *fuse_setup_compat25(int argc, char *argv[],
+ 				 const struct fuse_operations_compat25 *op,
+ 				 size_t op_size, char **mountpoint,
+ 				 int *multithreaded, int *fd);
+ 
+ void fuse_teardown_compat22(struct fuse *fuse, int fd, char *mountpoint);
+ 
+-#ifndef __FreeBSD__
++#if !defined(__FreeBSD__) && !defined(_WIN32)
+ #include <sys/statfs.h>
+ 
+ struct fuse_operations_compat22 {
+ 	int (*getattr) (const char *, struct stat *);
+ 	int (*readlink) (const char *, char *, size_t);
+ 	int (*getdir) (const char *, fuse_dirh_t, fuse_dirfil_t);
+ 	int (*mknod) (const char *, mode_t, dev_t);
+ 	int (*mkdir) (const char *, mode_t);
+ 	int (*unlink) (const char *);
+ 	int (*rmdir) (const char *);
+ 	int (*symlink) (const char *, const char *);
+ 	int (*rename) (const char *, const char *);
+ 	int (*link) (const char *, const char *);
+ 	int (*chmod) (const char *, mode_t);
+ 	int (*chown) (const char *, uid_t, gid_t);
+ 	int (*truncate) (const char *, off_t);
+ 	int (*utime) (const char *, struct utimbuf *);
+ 	int (*open) (const char *, struct fuse_file_info_compat *);
+ 	int (*read) (const char *, char *, size_t, off_t,
+ 		     struct fuse_file_info_compat *);
+@@ -181,21 +181,21 @@ struct fuse_operations_compat1 {
+ 	int (*chmod)	(const char *, mode_t);
+ 	int (*chown)	(const char *, uid_t, gid_t);
+ 	int (*truncate) (const char *, off_t);
+ 	int (*utime)	(const char *, struct utimbuf *);
+ 	int (*open)	(const char *, int);
+ 	int (*read)	(const char *, char *, size_t, off_t);
+ 	int (*write)	(const char *, const char *, size_t, off_t);
+ 	int (*statfs)	(struct fuse_statfs_compat1 *);
+ 	int (*release)	(const char *, int);
+ 	int (*fsync)	(const char *, int);
+ };
+ 
+ #define FUSE_DEBUG_COMPAT1	 (1 << 1)
+ 
+ struct fuse *fuse_new_compat1(int fd, int flags,
+ 			      const struct fuse_operations_compat1 *op);
+ 
+ void fuse_main_compat1(int argc, char *argv[],
+ 		       const struct fuse_operations_compat1 *op);
+ 
+-#endif /* __FreeBSD__ */
++#endif /* __FreeBSD__ || _WIN32 */
+Index: fuse-2.8.5/lib/Makefile.am
+===================================================================
+--- fuse-2.8.5.orig/lib/Makefile.am
++++ fuse-2.8.5/lib/Makefile.am
+@@ -12,33 +12,36 @@ mount_source = mount.c mount_util.c moun
+ endif
+ 
+ if ICONV
+ iconv_source = modules/iconv.c
+ else
+ iconv_source =
+ endif
+ 
+ libfuse_la_SOURCES = 		\
+ 	fuse.c			\
+ 	fuse_i.h		\
+ 	fuse_kern_chan.c	\
+ 	fuse_loop.c		\
+ 	fuse_loop_mt.c		\
+ 	fuse_lowlevel.c		\
+ 	fuse_misc.h		\
+ 	fuse_mt.c		\
+ 	fuse_opt.c		\
+ 	fuse_session.c		\
+ 	fuse_signals.c		\
++	fusent_proto.c		\
++	fusent_routines.c		\
++	st.c		\
+ 	cuse_lowlevel.c		\
+ 	helper.c		\
+ 	modules/subdir.c	\
+ 	$(iconv_source)		\
+ 	$(mount_source)
+ 
+ libfuse_la_LDFLAGS = @libfuse_libs@ -version-number 2:8:5 \
+ 	-Wl,--version-script,$(srcdir)/fuse_versionscript
+ 
+ libulockmgr_la_SOURCES = ulockmgr.c
+ libulockmgr_la_LDFLAGS = -pthread -version-number 1:0:1
+ 
+ EXTRA_DIST = fuse_versionscript
+Index: fuse-2.8.5/lib/fuse_loop.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_loop.c
++++ fuse-2.8.5/lib/fuse_loop.c
+@@ -1,28 +1,33 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB
+ */
+ 
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++#endif
++
+ #include "fuse_lowlevel.h"
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <errno.h>
+ 
+ int fuse_session_loop(struct fuse_session *se)
+ {
+ 	int res = 0;
+ 	struct fuse_chan *ch = fuse_session_next_chan(se, NULL);
+ 	size_t bufsize = fuse_chan_bufsize(ch);
+ 	char *buf = (char *) malloc(bufsize);
+ 	if (!buf) {
+ 		fprintf(stderr, "fuse: failed to allocate read buffer\n");
+ 		return -1;
+ 	}
+ 
+ 	while (!fuse_session_exited(se)) {
+ 		struct fuse_chan *tmpch = ch;
+ 		res = fuse_chan_recv(&tmpch, buf, bufsize);
+Index: fuse-2.8.5/lib/fuse_loop_mt.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_loop_mt.c
++++ fuse-2.8.5/lib/fuse_loop_mt.c
+@@ -1,28 +1,33 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB.
+ */
+ 
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++#endif
++
+ #include "fuse_lowlevel.h"
+ #include "fuse_misc.h"
+ #include "fuse_kernel.h"
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <signal.h>
+ #include <semaphore.h>
+ #include <errno.h>
+ #include <sys/time.h>
+ 
+ /* Environment var controlling the thread stack size */
+ #define ENVNAME_THREAD_STACK "FUSE_THREAD_STACK"
+ 
+ struct fuse_worker {
+ 	struct fuse_worker *prev;
+ 	struct fuse_worker *next;
+ 	pthread_t thread_id;
+@@ -112,82 +117,90 @@ static void *fuse_do_work(void *data)
+ 		if (mt->numavail > 10) {
+ 			if (mt->exit) {
+ 				pthread_mutex_unlock(&mt->lock);
+ 				return NULL;
+ 			}
+ 			list_del_worker(w);
+ 			mt->numavail--;
+ 			mt->numworker--;
+ 			pthread_mutex_unlock(&mt->lock);
+ 
+ 			pthread_detach(w->thread_id);
+ 			free(w->buf);
+ 			free(w);
+ 			return NULL;
+ 		}
+ 		pthread_mutex_unlock(&mt->lock);
+ 	}
+ 
+ 	sem_post(&mt->finish);
+ 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
++#ifndef _WIN32
+ 	pause();
++#endif
+ 
+ 	return NULL;
+ }
+ 
+ static int fuse_start_thread(struct fuse_mt *mt)
+ {
++#ifndef _WIN32  /* Fuse-NT */
+ 	sigset_t oldset;
+ 	sigset_t newset;
++#endif
+ 	int res;
+ 	pthread_attr_t attr;
+ 	char *stack_size;
+ 	struct fuse_worker *w = malloc(sizeof(struct fuse_worker));
+ 	if (!w) {
+ 		fprintf(stderr, "fuse: failed to allocate worker structure\n");
+ 		return -1;
+ 	}
+ 	memset(w, 0, sizeof(struct fuse_worker));
+ 	w->bufsize = fuse_chan_bufsize(mt->prevch);
+ 	w->buf = malloc(w->bufsize);
+ 	w->mt = mt;
+ 	if (!w->buf) {
+ 		fprintf(stderr, "fuse: failed to allocate read buffer\n");
+ 		free(w);
+ 		return -1;
+ 	}
+ 
+ 	/* Override default stack size */
+ 	pthread_attr_init(&attr);
+ 	stack_size = getenv(ENVNAME_THREAD_STACK);
+ 	if (stack_size && pthread_attr_setstacksize(&attr, atoi(stack_size)))
+ 		fprintf(stderr, "fuse: invalid stack size: %s\n", stack_size);
+ 
+ 	/* Disallow signal reception in worker threads */
++#ifndef _WIN32  /* Begin Fuse-NT */
+ 	sigemptyset(&newset);
+ 	sigaddset(&newset, SIGTERM);
+ 	sigaddset(&newset, SIGINT);
+ 	sigaddset(&newset, SIGHUP);
+ 	sigaddset(&newset, SIGQUIT);
+ 	pthread_sigmask(SIG_BLOCK, &newset, &oldset);
++#endif /* _WIN32 (End Fuse-NT) */
+ 	res = pthread_create(&w->thread_id, &attr, fuse_do_work, w);
++#ifndef _WIN32  /* Fuse-NT */
+ 	pthread_sigmask(SIG_SETMASK, &oldset, NULL);
++#endif
+ 	pthread_attr_destroy(&attr);
+ 	if (res != 0) {
+ 		fprintf(stderr, "fuse: error creating thread: %s\n",
+ 			strerror(res));
+ 		free(w->buf);
+ 		free(w);
+ 		return -1;
+ 	}
+ 	list_add_worker(w, &mt->main);
+ 	mt->numavail ++;
+ 	mt->numworker ++;
+ 
+ 	return 0;
+ }
+ 
+ static void fuse_join_worker(struct fuse_mt *mt, struct fuse_worker *w)
+ {
+ 	pthread_join(w->thread_id, NULL);
+ 	pthread_mutex_lock(&mt->lock);
+ 	list_del_worker(w);
+Index: fuse-2.8.5/lib/fuse_mt.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_mt.c
++++ fuse-2.8.5/lib/fuse_mt.c
+@@ -1,28 +1,34 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB.
+ */
+ 
++#ifdef _WIN32  /* Fuse-NT */
++# define __USE_MINGW_ANSI_STDIO 1
++# include "fusent_compat.h"
++# include <pthread.h>
++#endif
++
+ #include "fuse_i.h"
+ #include "fuse_misc.h"
+ #include "fuse_lowlevel.h"
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <pthread.h>
+ #include <assert.h>
+ 
+ struct procdata {
+ 	struct fuse *f;
+ 	struct fuse_chan *prevch;
+ 	struct fuse_session *prevse;
+ 	fuse_processor_t proc;
+ 	void *data;
+ };
+ 
+ static void mt_session_proc(void *data, const char *buf, size_t len,
+ 			    struct fuse_chan *ch)
+Index: fuse-2.8.5/lib/fuse_signals.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_signals.c
++++ fuse-2.8.5/lib/fuse_signals.c
+@@ -1,28 +1,31 @@
+ /*
+   FUSE: Filesystem in Userspace
+   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB
+ */
+ 
++/* Begin Fuse-NT */
++#ifndef _WIN32
++
+ #include "fuse_lowlevel.h"
+ 
+ #include <stdio.h>
+ #include <string.h>
+ #include <signal.h>
+ 
+ static struct fuse_session *fuse_instance;
+ 
+ static void exit_handler(int sig)
+ {
+ 	(void) sig;
+ 	if (fuse_instance)
+ 		fuse_session_exit(fuse_instance);
+ }
+ 
+ static int set_one_signal_handler(int sig, void (*handler)(int))
+ {
+ 	struct sigaction sa;
+ 	struct sigaction old_sa;
+ 
+@@ -53,20 +56,22 @@ int fuse_set_signal_handlers(struct fuse
+ 		return -1;
+ 
+ 	fuse_instance = se;
+ 	return 0;
+ }
+ 
+ void fuse_remove_signal_handlers(struct fuse_session *se)
+ {
+ 	if (fuse_instance != se)
+ 		fprintf(stderr,
+ 			"fuse: fuse_remove_signal_handlers: unknown session\n");
+ 	else
+ 		fuse_instance = NULL;
+ 
+ 	set_one_signal_handler(SIGHUP, SIG_DFL);
+ 	set_one_signal_handler(SIGINT, SIG_DFL);
+ 	set_one_signal_handler(SIGTERM, SIG_DFL);
+ 	set_one_signal_handler(SIGPIPE, SIG_DFL);
+ }
+ 
++#endif  /* _WIN32 */
++/* End Fuse-NT */
+Index: fuse-2.8.5/lib/modules/iconv.c
+===================================================================
+--- fuse-2.8.5.orig/lib/modules/iconv.c
++++ fuse-2.8.5/lib/modules/iconv.c
+@@ -1,28 +1,30 @@
+ /*
+   fuse iconv module: file name charset conversion
+   Copyright (C) 2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB
+ */
+ 
++#ifndef _WIN32  /* Fuse-NT */
++
+ #define FUSE_USE_VERSION 26
+ 
+ #include <fuse.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stddef.h>
+ #include <string.h>
+ #include <errno.h>
+ #include <iconv.h>
+ #include <pthread.h>
+ #include <locale.h>
+ #include <langinfo.h>
+ 
+ struct iconv {
+ 	struct fuse_fs *next;
+ 	pthread_mutex_t lock;
+ 	char *from_code;
+ 	char *to_code;
+ 	iconv_t tofs;
+ 	iconv_t fromfs;
+@@ -702,20 +704,22 @@ static struct fuse_fs *iconv_new(struct
+ 
+ 	ic->next = next[0];
+ 	fs = fuse_fs_new(&iconv_oper, sizeof(iconv_oper), ic);
+ 	if (!fs)
+ 		goto out_iconv_close_from;
+ 
+ 	return fs;
+ 
+ out_iconv_close_from:
+ 	iconv_close(ic->fromfs);
+ out_iconv_close_to:
+ 	iconv_close(ic->tofs);
+ out_free:
+ 	free(ic->from_code);
+ 	free(ic->to_code);
+ 	free(ic);
+ 	return NULL;
+ }
+ 
+ FUSE_REGISTER_MODULE(iconv, iconv_new);
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/lib/modules/subdir.c
+===================================================================
+--- fuse-2.8.5.orig/lib/modules/subdir.c
++++ fuse-2.8.5/lib/modules/subdir.c
+@@ -1,28 +1,30 @@
+ /*
+   fuse subdir module: offset paths with a base directory
+   Copyright (C) 2007  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB
+ */
+ 
++#ifndef _WIN32  /* Fuse-NT */
++
+ #define FUSE_USE_VERSION 26
+ 
+ #include <fuse.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stddef.h>
+ #include <string.h>
+ #include <errno.h>
+ 
+ struct subdir {
+ 	char *base;
+ 	size_t baselen;
+ 	int rellinks;
+ 	struct fuse_fs *next;
+ };
+ 
+ static struct subdir *subdir_get(void)
+ {
+ 	return fuse_get_context()->private_data;
+ }
+@@ -664,20 +666,22 @@ static struct fuse_fs *subdir_new(struct
+ 			fprintf(stderr, "fuse-subdir: memory allocation failed\n");
+ 			goto out_free;
+ 		}
+ 		d->base = tmp;
+ 		strcat(d->base, "/");
+ 	}
+ 	d->baselen = strlen(d->base);
+ 	d->next = next[0];
+ 	fs = fuse_fs_new(&subdir_oper, sizeof(subdir_oper), d);
+ 	if (!fs)
+ 		goto out_free;
+ 	return fs;
+ 
+ out_free:
+ 	free(d->base);
+ 	free(d);
+ 	return NULL;
+ }
+ 
+ FUSE_REGISTER_MODULE(subdir, subdir_new);
++
++#endif  /* _WIN32 */
+Index: fuse-2.8.5/lib/ulockmgr.c
+===================================================================
+--- fuse-2.8.5.orig/lib/ulockmgr.c
++++ fuse-2.8.5/lib/ulockmgr.c
+@@ -1,28 +1,30 @@
+ /*
+   libulockmgr: Userspace Lock Manager Library
+   Copyright (C) 2006  Miklos Szeredi <miklos@szeredi.hu>
+ 
+   This program can be distributed under the terms of the GNU LGPLv2.
+   See the file COPYING.LIB
+ */
+ 
++#ifndef _WIN32  /* Fuse-NT */
++
+ /* #define DEBUG 1 */
+ 
+ #include "ulockmgr.h"
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+ #include <pthread.h>
+ #include <errno.h>
+ #include <assert.h>
+ #include <signal.h>
+ #include <sys/stat.h>
+ #include <sys/socket.h>
+ #include <sys/wait.h>
+ 
+ struct message {
+ 	unsigned intr : 1;
+ 	unsigned nofd : 1;
+ 	pthread_t thr;
+ 	int cmd;
+@@ -421,20 +423,22 @@ int ulockmgr_op(int fd, int cmd, struct
+ 	err = ulockmgr_canonicalize(fd, &msg.lock);
+ 	if (err)
+ 		return err;
+ 
+ 	sigemptyset(&block);
+ 	sigaddset(&block, SIGUSR1);
+ 	pthread_sigmask(SIG_BLOCK, &block, &old);
+ 	pthread_mutex_lock(&ulockmgr_lock);
+ 	err = ulockmgr_send_request(&msg, owner, owner_len);
+ 	pthread_mutex_unlock(&ulockmgr_lock);
+ 	pthread_sigmask(SIG_SETMASK, &old, NULL);
+ 	if (!err && cmd == F_GETLK) {
+ 		if (msg.lock.l_type == F_UNLCK)
+ 			lock->l_type = F_UNLCK;
+ 		else
+ 			*lock = msg.lock;
+ 	}
+ 
+ 	return err;
+ }
++
++#endif  /* _WIN32 */

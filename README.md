@@ -28,13 +28,17 @@ Building: FUSE
 
 Work in progress ... this is the idea:
 
+    $ sudo yum install mingw64-gettext mingw64-win-iconv
     $ cd fuse-*
       # Apply fuse-NT patches:
     $ quilt push -a
-      # Set-up MingW64 build environment
+      # Set-up MingW64 build environment:
     $ mingw64-env
-      # Typical autoconf and build:
-    $ ./configure --target=x86_64-w64-mingw32
+      # Auto-reconf (we add files to lib/Makefile.am)
+    $ autoreconf -ifs -I/usr/x86_64-w64-mingw32/sys-root/mingw/share/aclocal/
+      # Typical autoconf (mingw64 wrapper) and build:
+    $ mingw64-configure CFLAGS="$CFLAGS -I/usr/x86_64-w64-mingw32/sys-root/mingw/include/ddk" \
+          LDFLAGS="-lntoskrnl -lkernel32"
     $ make
 
 
