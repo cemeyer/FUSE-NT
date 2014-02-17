@@ -29,7 +29,11 @@ Building: FUSE
 Work in progress ... this is the idea:
 
     $ cd fuse-*
+      # Apply fuse-NT patches:
+    $ quilt push -a
+      # Set-up MingW64 build environment
     $ mingw64-env
+      # Typical autoconf and build:
     $ ./configure --target=x86_64-w64-mingw32
     $ make
 
