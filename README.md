@@ -2,8 +2,9 @@ What is this?
 =============
 
 FUSE-NT is really two pieces of software:
-  1) A Windows IFS driver component (ifs/), and
-  2) A set of patches to the FUSE userspace libraries (fuse-2.8.5/)
+
+# A Windows IFS driver component (ifs/), and
+# A set of patches to the FUSE userspace libraries (fuse-2.8.5/)
 
 Together, these pieces seek to enable FUSE filesystems written against the
 latest version of the libfuse API to run unmodified on Cygwin on Windows
