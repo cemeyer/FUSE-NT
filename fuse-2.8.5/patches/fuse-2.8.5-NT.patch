@@ -388,7 +388,7 @@ Index: fuse-2.8.5/include/fuse_lowlevel_compat.h
  /* these definitions provide source compatibility to prior versions.
     Do not include this file directly! */
  
-+#ifndef __CYGWIN__
++#ifndef _WIN32
 +
  struct fuse_lowlevel_ops_compat25 {
  	void (*init) (void *userdata);
@@ -439,7 +439,7 @@ Index: fuse-2.8.5/include/fuse_lowlevel_compat.h
  		      off_t off);
  
 -#ifndef __FreeBSD__
-+#if !defined __FreeBSD__ && !defined __CYGWIN__
++#if !defined __FreeBSD__ && !defined _WIN32
  
  #include <sys/statfs.h>
  
@@ -482,9 +482,9 @@ Index: fuse-2.8.5/include/fuse_lowlevel_compat.h
  				size_t op_size, void *userdata);
  
 -#endif /* __FreeBSD__ */
-+#endif /* __FreeBSD__ || __CYGWIN__*/
++#endif /* __FreeBSD__ || _WIN32*/
 +
-+#ifndef __CYGWIN__
++#ifndef _WIN32
  
  struct fuse_chan_ops_compat24 {
  	int (*receive)(struct fuse_chan *ch, char *buf, size_t size);
@@ -496,10 +496,10 @@ Index: fuse-2.8.5/include/fuse_lowlevel_compat.h
  struct fuse_chan *fuse_chan_new_compat24(struct fuse_chan_ops_compat24 *op,
  					 int fd, size_t bufsize, void *data);
  
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 +
  int fuse_chan_receive(struct fuse_chan *ch, char *buf, size_t size);
-+#if defined __CYGWIN__
++#if defined _WIN32
 +struct fuse_chan *fuse_kern_chan_new(HANDLE fd);
 +#else
  struct fuse_chan *fuse_kern_chan_new(int fd);
@@ -529,7 +529,7 @@ Index: fuse-2.8.5/include/fuse_lowlevel.h
  #include <sys/statvfs.h>
  #include <sys/uio.h>
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +# include <windows.h>
 +#endif
 +
@@ -576,7 +576,7 @@ Index: fuse-2.8.5/include/fuse_lowlevel.h
   */
 -struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op, int fd,
 +struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op,
-+#if defined __CYGWIN__
++#if defined _WIN32
 +				HANDLE fd,
 +#else
 +				int fd,
@@ -590,7 +590,7 @@ Index: fuse-2.8.5/include/fuse_lowlevel.h
   * @return the file descriptor passed to fuse_chan_new()
   */
 -int fuse_chan_fd(struct fuse_chan *ch);
-+#if defined __CYGWIN__
++#if defined _WIN32
 +HANDLE
 +#else
 +int
@@ -629,7 +629,7 @@ Index: fuse-2.8.5/include/fusent_proto.h
 +  See the file LGPLv2.txt.
 +*/
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +#ifndef NTPROTO_H
 +#define NTPROTO_H
 +
@@ -764,7 +764,7 @@ Index: fuse-2.8.5/include/fusent_proto.h
 +} FUSENT_RESP;
 +
 +#endif /* NTPROTO_H */
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 Index: fuse-2.8.5/include/fusent_routines.h
 ===================================================================
 --- /dev/null
@@ -778,7 +778,7 @@ Index: fuse-2.8.5/include/fusent_routines.h
 +  See the file LGPLv2.txt.
 +*/
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +#ifndef IRPDECODE_H
 +#define IRPDECODE_H
 +
@@ -813,7 +813,7 @@ Index: fuse-2.8.5/include/fusent_routines.h
 +void fusent_unixtime_to_wintime(time_t t, LARGE_INTEGER *wintime);
 +
 +#endif /* IRPDECODE_H */
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 Index: fuse-2.8.5/include/fusent_translate.h
 ===================================================================
 --- /dev/null
@@ -827,7 +827,7 @@ Index: fuse-2.8.5/include/fusent_translate.h
 +  See the file LGPLv2.txt.
 +*/
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +#ifndef FUSENT_TRANSLATE_H
 +#define FUSENT_TRANSLATE_H
 +
@@ -841,7 +841,7 @@ Index: fuse-2.8.5/include/fusent_translate.h
 +void fusent_translate_teardown(void);
 +
 +#endif /* FUSENT_TRANSLATE_H */
-+#endif /* __CYGWIN__ */
++#endif /* _WIN32 */
 Index: fuse-2.8.5/include/st.h
 ===================================================================
 --- /dev/null
@@ -10133,7 +10133,7 @@ Index: fuse-2.8.5/lib/fuse_i.h
  #include "fuse.h"
  #include "fuse_lowlevel.h"
  
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +# include <windows.h>
 +#endif
 +
@@ -10170,7 +10170,7 @@ Index: fuse-2.8.5/lib/fuse_i.h
  	struct fuse_req *next;
  	struct fuse_req *prev;
 +
-+#ifdef __CYGWIN__
++#ifdef _WIN32
 +	// If this is non-NULL, reply functions should store the
 +	// outgoing header at this pointer instead of replying.
 +	struct fuse_out_header *response_hijack;
@@ -10212,7 +10212,7 @@ Index: fuse-2.8.5/lib/fuse_i.h
  
  int fuse_sync_compat_args(struct fuse_args *args);
  
-+#if defined __CYGWIN__
++#if defined _WIN32
 +struct fuse_chan *fuse_kern_chan_new(HANDLE fd);
 +#else
  struct fuse_chan *fuse_kern_chan_new(int fd);
@@ -10223,7 +10223,7 @@ Index: fuse-2.8.5/lib/fuse_i.h
  					size_t op_size, void *userdata);
  
  void fuse_kern_unmount_compat22(const char *mountpoint);
-+#if defined __CYGWIN__
++#if defined _WIN32
 +void fuse_kern_unmount(const char *mountpoint, HANDLE fd);
 +int fusent_kern_mount(const char *mountpoint, struct fuse_args *args, HANDLE *fd);
 +#else
@@ -10241,7 +10241,7 @@ Index: fuse-2.8.5/lib/fuse_i.h
  			       size_t op_size,
  			       char **mountpoint,
  			       int *multithreaded,
-+#if defined __CYGWIN__
++#if defined _WIN32
 +			       HANDLE *fd,
 +#else
  			       int *fd,
@@ -12573,7 +12573,7 @@ Index: fuse-2.8.5/lib/fuse_misc.h
 -#define FUSE_SYMVER(x) __asm__(x)
 -#else
 +/* Versioned symbols confuse the dynamic linker in uClibc and cygwin */
-+#if defined(__UCLIBC__) || defined(__CYGWIN__)
++#if defined(__UCLIBC__) || defined(_WIN32)
  #define FUSE_SYMVER(x)
 +#else
 +#define FUSE_SYMVER(x) __asm__(x)
