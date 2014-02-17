@@ -12,7 +12,6 @@
 #include "fuse_opt.h"
 #include "fuse_lowlevel.h"
 #include "fuse_common_compat.h"
-#include "fusent_translate.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,10 +34,6 @@ struct helper_opts {
 	int nodefault_subtype;
 	char *mountpoint;
 };
-
-#ifdef __CYGWIN__
-extern const char *fusent_argv0;
-#endif
 
 #define FUSE_HELPER_OPT(t, p) { t, offsetof(struct helper_opts, p), 1 }
 
@@ -111,19 +106,12 @@ static int fuse_helper_opt_proc(void *data, const char *arg, int key,
 	case FUSE_OPT_KEY_NONOPT:
 		if (!hopts->mountpoint) {
 			char mountpoint[PATH_MAX];
-#if defined __CYGWIN__
-			// We don't normalize mountpoints for Windows; for now we expect only
-			// drive letter mounts (e.g., "F:") -- realpath() falls over on these.
-			strncpy(mountpoint, arg, PATH_MAX-1);
-			mountpoint[PATH_MAX-1] = '\0';
-#else
 			if (realpath(arg, mountpoint) == NULL) {
 				fprintf(stderr,
 					"fuse: bad mount point `%s': %s\n",
 					arg, strerror(errno));
 				return -1;
 			}
-#endif
 			return fuse_opt_add_opt(&hopts->mountpoint, mountpoint);
 		} else {
 			fprintf(stderr, "fuse: invalid argument `%s'\n", arg);
@@ -207,14 +195,6 @@ static struct fuse_chan *fuse_mount_common(const char *mountpoint,
 					   struct fuse_args *args)
 {
 	struct fuse_chan *ch;
-
-#if defined __CYGWIN__
-	HANDLE fd;
-
-	int err = fusent_kern_mount(mountpoint, args, &fd);
-	if (err < 0)
-		return NULL;
-#else
 	int fd;
 
 	/*
@@ -230,10 +210,8 @@ static struct fuse_chan *fuse_mount_common(const char *mountpoint,
 	fd = fuse_mount_compat25(mountpoint, args);
 	if (fd == -1)
 		return NULL;
-#endif
 
 	ch = fuse_kern_chan_new(fd);
-
 	if (!ch)
 		fuse_kern_unmount(mountpoint, fd);
 
@@ -247,16 +225,7 @@ struct fuse_chan *fuse_mount(const char *mountpoint, struct fuse_args *args)
 
 static void fuse_unmount_common(const char *mountpoint, struct fuse_chan *ch)
 {
-#if !defined __CYGWIN__
 	int fd = ch ? fuse_chan_fd(ch) : -1;
-#else
-	if (!ch) {
-		fprintf(stderr, "err: fuse_unmount_common called with NULL ch\n");
-		return;
-	}
-	HANDLE fd = fuse_chan_fd(ch);
-#endif
-
 	fuse_kern_unmount(mountpoint, fd);
 	fuse_chan_destroy(ch);
 }
@@ -271,11 +240,7 @@ struct fuse *fuse_setup_common(int argc, char *argv[],
 			       size_t op_size,
 			       char **mountpoint,
 			       int *multithreaded,
-#if defined __CYGWIN__
-			       HANDLE *fd,
-#else
 			       int *fd,
-#endif
 			       void *user_data,
 			       int compat)
 {
@@ -300,12 +265,9 @@ struct fuse *fuse_setup_common(int argc, char *argv[],
 	if (fuse == NULL)
 		goto err_unmount;
 
-	// Skip daemonizing on Cygwin for debugging:
-#ifndef __CYGWIN__
 	res = fuse_daemonize(foreground);
 	if (res == -1)
 		goto err_unmount;
-#endif
 
 	res = fuse_set_signal_handlers(fuse_get_session(fuse));
 	if (res == -1)
@@ -357,10 +319,6 @@ static int fuse_main_common(int argc, char *argv[],
 	int multithreaded;
 	int res;
 
-#ifdef __CYGWIN__
-	fusent_argv0 = strdup(argv[0]);
-	fusent_translate_setup();
-#endif
 	fuse = fuse_setup_common(argc, argv, op, op_size, &mountpoint,
 				 &multithreaded, NULL, user_data, compat);
 	if (fuse == NULL)
@@ -372,10 +330,6 @@ static int fuse_main_common(int argc, char *argv[],
 		res = fuse_loop(fuse);
 
 	fuse_teardown_common(fuse, mountpoint);
-#ifdef __CYGWIN__
-	fusent_translate_teardown();
-	free(fusent_argv0);
-#endif
 	if (res == -1)
 		return 1;
 
@@ -400,8 +354,6 @@ int fuse_version(void)
 {
 	return FUSE_VERSION;
 }
-
-#ifndef __CYGWIN__
 
 #include "fuse_compat.h"
 
@@ -499,5 +451,3 @@ FUSE_SYMVER(".symver fuse_setup_compat25,fuse_setup@FUSE_2.5");
 FUSE_SYMVER(".symver fuse_teardown_compat22,fuse_teardown@FUSE_2.2");
 FUSE_SYMVER(".symver fuse_main_real_compat25,fuse_main_real@FUSE_2.5");
 FUSE_SYMVER(".symver fuse_mount_compat25,fuse_mount@FUSE_2.5");
-
-#endif /* __CYGWIN__ */

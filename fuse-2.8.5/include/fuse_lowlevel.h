@@ -32,10 +32,6 @@
 #include <sys/statvfs.h>
 #include <sys/uio.h>
 
-#ifdef __CYGWIN__
-# include <windows.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1484,12 +1480,7 @@ struct fuse_chan_ops {
  * @param data user data
  * @return the new channel object, or NULL on failure
  */
-struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op,
-#if defined __CYGWIN__
-				HANDLE fd,
-#else
-				int fd,
-#endif
+struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op, int fd,
 				size_t bufsize, void *data);
 
 /**
@@ -1498,12 +1489,7 @@ struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op,
  * @param ch the channel
  * @return the file descriptor passed to fuse_chan_new()
  */
-#if defined __CYGWIN__
-HANDLE
-#else
-int
-#endif
-fuse_chan_fd(struct fuse_chan *ch);
+int fuse_chan_fd(struct fuse_chan *ch);
 
 /**
  * Query the minimal receive buffer size

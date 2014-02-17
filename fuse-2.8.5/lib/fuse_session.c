@@ -22,11 +22,7 @@ struct fuse_chan {
 
 	struct fuse_session *se;
 
-#if defined __CYGWIN__
-	HANDLE fd;
-#else
 	int fd;
-#endif
 
 	size_t bufsize;
 
@@ -120,12 +116,7 @@ void *fuse_session_data(struct fuse_session *se)
 	return se->data;
 }
 
-static struct fuse_chan *fuse_chan_new_common(struct fuse_chan_ops *op,
-#if defined __CYGWIN__
-					      HANDLE fd,
-#else
-					      int fd,
-#endif
+static struct fuse_chan *fuse_chan_new_common(struct fuse_chan_ops *op, int fd,
 					      size_t bufsize, void *data,
 					      int compat)
 {
@@ -145,31 +136,20 @@ static struct fuse_chan *fuse_chan_new_common(struct fuse_chan_ops *op,
 	return ch;
 }
 
-#if defined __CYGWIN__
-struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op, HANDLE fd,
-				size_t bufsize, void *data)
-#else
 struct fuse_chan *fuse_chan_new(struct fuse_chan_ops *op, int fd,
 				size_t bufsize, void *data)
-#endif
 {
 	return fuse_chan_new_common(op, fd, bufsize, data, 0);
 }
 
-#if !defined __CYGWIN__
 struct fuse_chan *fuse_chan_new_compat24(struct fuse_chan_ops_compat24 *op,
 					 int fd, size_t bufsize, void *data)
 {
 	return fuse_chan_new_common((struct fuse_chan_ops *) op, fd, bufsize,
 				    data, 24);
 }
-#endif
 
-#if defined __CYGWIN__
-HANDLE fuse_chan_fd(struct fuse_chan *ch)
-#else
 int fuse_chan_fd(struct fuse_chan *ch)
-#endif
 {
 	return ch->fd;
 }
@@ -192,12 +172,10 @@ struct fuse_session *fuse_chan_session(struct fuse_chan *ch)
 int fuse_chan_recv(struct fuse_chan **chp, char *buf, size_t size)
 {
 	struct fuse_chan *ch = *chp;
-#ifndef __CYGWIN__
 	if (ch->compat)
 		return ((struct fuse_chan_ops_compat24 *) &ch->op)
 			->receive(ch, buf, size);
 	else
-#endif
 		return ch->op.receive(chp, buf, size);
 }
 

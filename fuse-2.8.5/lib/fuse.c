@@ -33,7 +33,6 @@
 #include <sys/param.h>
 #include <sys/uio.h>
 #include <sys/time.h>
-#include <Windows.h>
 
 #define FUSE_DEFAULT_INTR_SIGNAL SIGUSR1
 
@@ -3873,7 +3872,6 @@ void fuse_destroy(struct fuse *f)
 	fuse_delete_context_key();
 }
 
-#ifndef __CYGWIN__
 static struct fuse *fuse_new_common_compat25(int fd, struct fuse_args *args,
 					     const struct fuse_operations *op,
 					     size_t op_size, int compat)
@@ -3886,7 +3884,6 @@ static struct fuse *fuse_new_common_compat25(int fd, struct fuse_args *args,
 
 	return f;
 }
-#endif
 
 /* called with fuse_context_lock held or during initialization (before
    main() has been called) */
@@ -3900,7 +3897,7 @@ void fuse_register_module(struct fuse_module *mod)
 	fuse_modules = mod;
 }
 
-#if !defined __FreeBSD__ && !defined __CYGWIN__
+#ifndef __FreeBSD__
 
 static struct fuse *fuse_new_common_compat(int fd, const char *opts,
 					   const struct fuse_operations *op,
@@ -3957,9 +3954,7 @@ FUSE_SYMVER(".symver fuse_set_getcontext_func,__fuse_set_getcontext_func@");
 FUSE_SYMVER(".symver fuse_new_compat2,fuse_new@");
 FUSE_SYMVER(".symver fuse_new_compat22,fuse_new@FUSE_2.2");
 
-#endif /* __FreeBSD__ || __CYGWIN__ */
-
-#ifndef __CYGWIN__
+#endif /* __FreeBSD__ */
 
 struct fuse *fuse_new_compat25(int fd, struct fuse_args *args,
 			       const struct fuse_operations_compat25 *op,
@@ -3970,5 +3965,3 @@ struct fuse *fuse_new_compat25(int fd, struct fuse_args *args,
 }
 
 FUSE_SYMVER(".symver fuse_new_compat25,fuse_new@FUSE_2.5");
-
-#endif /* !__CYGWIN__ */

@@ -9,11 +9,11 @@
 #include "config.h"
 #include <pthread.h>
 
-/* Versioned symbols confuse the dynamic linker in uClibc and cygwin */
-#if defined(__UCLIBC__) || defined(__CYGWIN__)
-#define FUSE_SYMVER(x)
-#else
+/* Versioned symbols confuse the dynamic linker in uClibc */
+#ifndef __UCLIBC__
 #define FUSE_SYMVER(x) __asm__(x)
+#else
+#define FUSE_SYMVER(x)
 #endif
 
 #ifndef USE_UCLIBC

@@ -9,10 +9,6 @@
 #include "fuse.h"
 #include "fuse_lowlevel.h"
 
-#ifdef __CYGWIN__
-# include <windows.h>
-#endif
-
 struct fuse_chan;
 struct fuse_ll;
 
@@ -45,17 +41,6 @@ struct fuse_req {
 	} u;
 	struct fuse_req *next;
 	struct fuse_req *prev;
-
-#ifdef __CYGWIN__
-	// If this is non-NULL, reply functions should store the
-	// outgoing header at this pointer instead of replying.
-	struct fuse_out_header *response_hijack;
-
-	// If this is non-NULL, and pesponse_hijack is non-NULL,
-	// dump the response here.
-	char *response_hijack_buf;
-	size_t response_hijack_buflen;
-#endif
 };
 
 struct fuse_ll {
@@ -88,24 +73,15 @@ struct fuse *fuse_new_common(struct fuse_chan *ch, struct fuse_args *args,
 
 int fuse_sync_compat_args(struct fuse_args *args);
 
-#if defined __CYGWIN__
-struct fuse_chan *fuse_kern_chan_new(HANDLE fd);
-#else
 struct fuse_chan *fuse_kern_chan_new(int fd);
-#endif
 
 struct fuse_session *fuse_lowlevel_new_common(struct fuse_args *args,
 					const struct fuse_lowlevel_ops *op,
 					size_t op_size, void *userdata);
 
 void fuse_kern_unmount_compat22(const char *mountpoint);
-#if defined __CYGWIN__
-void fuse_kern_unmount(const char *mountpoint, HANDLE fd);
-int fusent_kern_mount(const char *mountpoint, struct fuse_args *args, HANDLE *fd);
-#else
 void fuse_kern_unmount(const char *mountpoint, int fd);
 int fuse_kern_mount(const char *mountpoint, struct fuse_args *args);
-#endif
 
 int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 			       int count);
@@ -117,11 +93,7 @@ struct fuse *fuse_setup_common(int argc, char *argv[],
 			       size_t op_size,
 			       char **mountpoint,
 			       int *multithreaded,
-#if defined __CYGWIN__
-			       HANDLE *fd,
-#else
 			       int *fd,
-#endif
 			       void *user_data,
 			       int compat);
 

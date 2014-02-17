@@ -13,23 +13,6 @@
 #include "fuse_common_compat.h"
 #include "fuse_lowlevel_compat.h"
 
-#ifdef __CYGWIN__
-# include "fusent_proto.h"
-# include "fusent_routines.h"
-# include "st.h"
-
-# include <ddk/ntifs.h>
-
-# include <iconv.h>
-
-# include <sys/types.h>
-# include <sys/stat.h>
-# include <fcntl.h>
-# include <ctype.h>
-
-# define FUSENT_MAX_PATH 256
-#endif /* __CYGWIN__ */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -40,191 +23,6 @@
 
 #define PARAM(inarg) (((char *)(inarg)) + sizeof(*(inarg)))
 #define OFFSET_MAX 0x7fffffffffffffffLL
-
-#ifdef __CYGWIN__
-// Sets up any data structures the fusent translate layer will need to persist
-// across calls.
-
-// Conversion descriptor for iconv; used to convert between UTF-16LE Windows filenames
-// and UTF-8 FUSE-hosted filesystem names.
-static iconv_t cd_utf16le_to_utf8;
-
-// Maps between open FileObject pointers (fops) and fuse_file_info pointers / inode numbers:
-static st_table *fusent_fop_fi_map;
-static st_table *fusent_fop_ino_map;
-// Map to basenames:
-static st_table *fusent_fop_basename_map;
-// Map to open file offsets:
-static st_table *fusent_fop_pos_map;
-// Map to open file sync flag:
-static st_table *fusent_fop_sync_map;
-// Map to open directory listings; ghetto, but, whatever:
-typedef struct {
-	int64_t off;
-	uint32_t len, singlefile;
-	char *listing;
-} FUSENT_DIRLISTING;
-static st_table *fusent_fop_dirlisting_map;
-
-void fusent_translate_setup()
-{
-	cd_utf16le_to_utf8 = iconv_open("UTF-8//IGNORE", "UTF-16LE");
-	fusent_fop_fi_map = st_init_numtable();
-	fusent_fop_ino_map = st_init_numtable();
-	fusent_fop_basename_map = st_init_numtable();
-	fusent_fop_pos_map = st_init_numtable();
-	fusent_fop_sync_map = st_init_numtable();
-	fusent_fop_dirlisting_map = st_init_numtable();
-}
-
-// Destroys any persistant data structures at shut down.
-void fusent_translate_teardown()
-{
-	st_free_table(fusent_fop_dirlisting_map);
-	st_free_table(fusent_fop_sync_map);
-	st_free_table(fusent_fop_pos_map);
-	st_free_table(fusent_fop_basename_map);
-	st_free_table(fusent_fop_ino_map);
-	st_free_table(fusent_fop_fi_map);
-	iconv_close(cd_utf16le_to_utf8);
-}
-
-static inline size_t max_sz(size_t a, size_t b)
-{
-	if (a < b) return b;
-	return a;
-}
-
-// Returns 1 if sync, 0 if async, -1 on lookup fail:
-static inline int fusent_is_sync(FILE_OBJECT *fop)
-{
-	st_data_t issync;
-	if (!st_lookup(fusent_fop_sync_map, (st_data_t)fop, &issync))
-		return -1;
-
-	return (int)issync;
-}
-
-// Given a LARGE_INTEGER offset from an IO_STACK_LOCATION and the current file position,
-// figure out where a read or write should be performed:
-//
-// Hack:
-#ifndef FILE_USE_FILE_POINTER_POSITION
-# define FILE_USE_FILE_POINTER_POSITION (-2)
-#endif
-static inline uint64_t fusent_readwrite_offset(FILE_OBJECT *fop, uint64_t curoff, LARGE_INTEGER off)
-{
-	int issync = fusent_is_sync(fop);
-
-	if (issync < 0)
-		fprintf(stderr, "Err: couldn't find sync flag for fop: %p\n", fop);
-
-	// This is how I interpret http://msdn.microsoft.com/en-us/library/ff549327.aspx --cemeyer:
-	if ((issync == 1) && (
-				(off.LowPart == FILE_USE_FILE_POINTER_POSITION && off.HighPart == -1) ||
-				!off.QuadPart))
-		return curoff;
-
-	if (off.QuadPart < 0)
-		fprintf(stderr, "Err: Got negative offset? %lld\n", off.QuadPart);
-
-	return (uint64_t)off.QuadPart; // w32 uses an i64, fuse wants u64
-}
-
-// Add the fh <-> fop mapping to our maps:
-static inline void fusent_add_fop_mapping(PFILE_OBJECT fop, struct fuse_file_info *fi, fuse_ino_t ino, char *basename, int issync)
-{
-	st_insert(fusent_fop_fi_map, (st_data_t)fop, (st_data_t)fi);
-	st_insert(fusent_fop_ino_map, (st_data_t)fop, (st_data_t)ino);
-	uint64_t *fpos = calloc(1, sizeof(uint64_t));
-	*fpos = 0;
-	st_insert(fusent_fop_pos_map, (st_data_t)fop, (st_data_t)fpos);
-	uintptr_t sync = issync;
-	st_insert(fusent_fop_sync_map, (st_data_t)fop, (st_data_t)sync);
-
-	// Transcode the basename into native Windows WCHARs:
-	size_t bnlen = strlen(basename);
-	WCHAR *wcbasename = malloc(sizeof(WCHAR) * (bnlen + 1));
-	fusent_transcode(basename, bnlen, wcbasename, sizeof(WCHAR) * bnlen, "UTF-8", "UTF-16LE");
-	wcbasename[bnlen] = L'\0';
-
-	st_insert(fusent_fop_basename_map, (st_data_t)fop, (st_data_t)wcbasename);
-
-	fprintf(stderr, "Added fop mapping: %p -> %p, %lu, `%s'\n", fop, fi, ino, basename);
-}
-
-// Lookup the corresponding file_info pointer for an open file handle (fop).
-// Negative on error, zero on success.
-static inline int fusent_fi_inode_basename_from_fop(PFILE_OBJECT fop, struct fuse_file_info **fi_out, fuse_ino_t *ino_out, WCHAR **bn_out)
-{
-	int res;
-	st_data_t rfi, rino, rbn;
-
-	res = st_lookup(fusent_fop_fi_map, (st_data_t)fop, &rfi) - 1;
-	if (!res) *fi_out = (struct fuse_file_info *)rfi;
-	else return res;
-
-	res = st_lookup(fusent_fop_ino_map, (st_data_t)fop, &rino) - 1;
-	if (!res) *ino_out = (fuse_ino_t)rino;
-	else return res;
-
-	res = st_lookup(fusent_fop_basename_map, (st_data_t)fop, &rbn) - 1;
-	if (!res) *bn_out = (WCHAR *)rbn;
-	return res;
-}
-
-// Removes a fop mapping
-static inline void fusent_remove_fop_mapping(PFILE_OBJECT fop)
-{
-	struct fuse_file_info *rfi;
-	fuse_ino_t ino;
-	WCHAR *bn;
-	if (fusent_fi_inode_basename_from_fop(fop, &rfi, &ino, &bn) < 0) return;
-
-	free(rfi);
-	free(bn);
-
-	st_data_t irfop = (st_data_t)fop;
-	st_delete(fusent_fop_fi_map, &irfop, NULL);
-
-	irfop = (st_data_t)fop;
-	st_delete(fusent_fop_ino_map, &irfop, NULL);
-
-	irfop = (st_data_t)fop;
-	st_delete(fusent_fop_basename_map, &irfop, NULL);
-
-	irfop = (st_data_t)fop;
-	st_data_t pos;
-	if (st_delete(fusent_fop_pos_map, &irfop, &pos)) {
-		if (pos) free((uint64_t *)pos);
-	}
-
-	irfop = (st_data_t)fop;
-	st_delete(fusent_fop_sync_map, &irfop, NULL);
-}
-
-// Translates a unix mode_t to windows' FileAttributes ULONG
-static void fusent_unixmode_to_winattr(mode_t m, ULONG *winattr)
-{
-	ULONG val = 0;
-	//if (S_ISBLK(m) || S_ISCHR(m))
-	//	val |= FILE_ATTRIBUTE_DEVICE;
-	//if (!(m & S_IWUSR || m & S_IWGRP || m & S_IWOTH))
-	//	val |= FILE_ATTRIBUTE_READONLY;
-	// I'm not sure we should claim a link is a reparse point:
-	//if (S_ISLNK(m))
-	//	val |= FILE_ATTRIBUTE_REPARSE_POINT;
-	if (S_ISDIR(m))
-		val |= FILE_ATTRIBUTE_DIRECTORY;
-	else
-	//if (S_ISREG(m))
-		val |= FILE_ATTRIBUTE_NORMAL;
-	//else
-	//	val |= FILE_ATTRIBUTE_SYSTEM;
-
-	*winattr = val;
-}
-#endif /* __CYGWIN__ */
 
 struct fuse_pollhandle {
 	uint64_t kh;
@@ -263,7 +61,7 @@ static void convert_attr(const struct fuse_setattr_in *attr, struct stat *stbuf)
 	ST_MTIM_NSEC_SET(stbuf, attr->mtimensec);
 }
 
-static inline size_t iov_length(const struct iovec *iov, size_t count)
+static	size_t iov_length(const struct iovec *iov, size_t count)
 {
 	size_t seg;
 	size_t ret = 0;
@@ -329,7 +127,6 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 
 	out.unique = req->unique;
 	out.error = error;
-
 	iov[0].iov_base = &out;
 	iov[0].iov_len = sizeof(struct fuse_out_header);
 	out.len = iov_length(iov, count);
@@ -347,24 +144,6 @@ int fuse_send_reply_iov_nofree(fuse_req_t req, int error, struct iovec *iov,
 		}
 	}
 
-#ifdef __CYGWIN__
-	if (req->response_hijack) {
-		*req->response_hijack = out;
-		if (req->response_hijack_buf && count > 1) {
-			size_t len = iov[1].iov_len;
-			printf("reply_iov_nofree copying 0x%.8x bytes from %p to %p\n", len, iov[1].iov_base, req->response_hijack_buf);
-			// Ensure that buf is large enough to hold iov (copy as much as we can):
-			if (len > req->response_hijack_buflen) len = req->response_hijack_buflen;
-			
-			memcpy(req->response_hijack_buf, iov[1].iov_base, len);
-
-			// Report a possible short write:
-			req->response_hijack_buflen = iov[1].iov_len;
-		}
-		return 0;
-	}
-#endif
-
 	return fuse_chan_send(req->ch, iov, count);
 }
 
@@ -374,7 +153,7 @@ static int send_reply_iov(fuse_req_t req, int error, struct iovec *iov,
 	int res;
 
 	res = fuse_send_reply_iov_nofree(req, error, iov, count);
-	// fuse_free_req(req);
+	fuse_free_req(req);
 	return res;
 }
 
@@ -412,14 +191,6 @@ int fuse_reply_iov(fuse_req_t req, const struct iovec *iov, int count)
 size_t fuse_dirent_size(size_t namelen)
 {
 	return FUSE_DIRENT_ALIGN(FUSE_NAME_OFFSET + namelen);
-}
-
-static size_t fusent_fdient_size(size_t namelenbytes)
-{
-	// Turns out FUSE_DIRENT_ALIGN aligns along 8-byte boundaries too; this
-	// is all Windows requires for packed FILE_DIRECTORY_INFORMATION structs.
-	return FUSE_DIRENT_ALIGN(sizeof(FILE_DIRECTORY_INFORMATION) +
-			namelenbytes - sizeof(WCHAR));
 }
 
 char *fuse_add_dirent(char *buf, const char *name, const struct stat *stbuf,
@@ -479,13 +250,7 @@ int fuse_reply_err(fuse_req_t req, int err)
 
 void fuse_reply_none(fuse_req_t req)
 {
-
-#ifdef __CYGWIN__
-	if (req->response_hijack)
-		memset(req->response_hijack, 0, sizeof(struct fuse_out_header));
-	else
-#endif
-		fuse_chan_send(req->ch, NULL, 0);
+	fuse_chan_send(req->ch, NULL, 0);
 	fuse_free_req(req);
 }
 
@@ -994,10 +759,6 @@ static void do_write(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		param = PARAM(arg);
 	}
 
-#ifdef __CYGWIN__
-	param = req->response_hijack_buf; // abusing the crap out of this, oops
-#endif
-
 	if (req->f->op.write)
 		req->f->op.write(req, nodeid, param, arg->size,
 				 arg->offset, &fi);
@@ -1295,8 +1056,6 @@ static void do_interrupt(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	pthread_mutex_unlock(&f->lock);
 }
 
-// This is only used by a Unix-only portion of fuse_ll_process:
-#ifndef __CYGWIN__
 static struct fuse_req *check_interrupt(struct fuse_ll *f, struct fuse_req *req)
 {
 	struct fuse_req *curr;
@@ -1318,7 +1077,6 @@ static struct fuse_req *check_interrupt(struct fuse_ll *f, struct fuse_req *req)
 	} else
 		return NULL;
 }
-#endif /* __CYGWIN__ */
 
 static void do_bmap(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 {
@@ -1678,17 +1436,11 @@ static struct {
 	[FUSE_IOCTL]	   = { do_ioctl,       "IOCTL"	     },
 	[FUSE_POLL]	   = { do_poll,        "POLL"	     },
 	[FUSE_DESTROY]	   = { do_destroy,     "DESTROY"     },
-#if defined __CYGWIN__
-	[CUSE_INIT]	   = { NULL,           "CUSE_INIT"   },
-#else
 	[CUSE_INIT]	   = { cuse_lowlevel_init, "CUSE_INIT"   },
-#endif
 };
 
 #define FUSE_MAXOP (sizeof(fuse_ll_ops) / sizeof(fuse_ll_ops[0]))
 
-// This is only used by a Unix-only part of fuse_ll_process:
-#ifndef __CYGWIN__
 static const char *opname(enum fuse_opcode opcode)
 {
 	if (opcode >= FUSE_MAXOP || !fuse_ll_ops[opcode].name)
@@ -1696,1223 +1448,22 @@ static const char *opname(enum fuse_opcode opcode)
 	else
 		return fuse_ll_ops[opcode].name;
 }
-#endif
-
-#ifdef __CYGWIN__
-// Does an in-place conversion of a Windows-formatted buffer to
-// Unix-formatted. Probably buggy.
-static void fusent_convert_win_path(char *buf, size_t *len) {
-	size_t i;
-	// For now:
-	//   1) Replace backslashes with slashes
-	for (i = 0; i < *len; i++) {
-		if (buf[i] == '\\') buf[i] = '/';
-	}
-
-	//   2) Strip any beginning drive
-	if (*len > 2 && isalpha((int)buf[0]) && buf[1] == ':') {
-		*len = *len - 2;
-		memmove(buf, &buf[2], *len);
-	}
-}
-
-// Get the current read/write offset for the given file object
-static uint64_t fusent_get_file_offset(PFILE_OBJECT fop)
-{
-	st_data_t poffset;
-
-	if (st_lookup(fusent_fop_pos_map, (st_data_t)fop, &poffset))
-		return *((uint64_t *) poffset);
-	else
-		return 0;
-}
-
-// Sets the current file offset to the given offset
-static int fusent_set_file_offset(PFILE_OBJECT fop, uint64_t offset) {
-	int res;
-	st_data_t data_offset;
-
-	res = st_lookup(fusent_fop_pos_map, (st_data_t)fop, &data_offset) - 1;
-	if (!res)
-		*((uint64_t *) data_offset) = offset;
-
-	return res;
-}
-
-// Given a path in `fn' (assume unix format), find the inode of the parent.
-//   e.g. /sbin/route -> inode of /sbin
-// Additionally, locate the offset of the basename in the buffer and
-// return a pointer to it.
-//
-// Returns negative if the parent can't be found or the path is invalid:
-//      stdint.h -> err
-static int fusent_get_parent_inode(fuse_req_t req, char *fn, char **bn, fuse_ino_t *in) {
-	if (*fn != '/') return -1;
-	if (!req->f->op.lookup) return -1;
-	fn ++;
-
-	const size_t buflen = sizeof(struct fuse_entry_out);
-
-	fuse_ino_t curino = FUSE_ROOT_ID;
-	char *hijackbuf = malloc(buflen);
-
-	for (;;) {
-		// This is totally fine in UTF-8, by the way:
-		char *nextsl = strchr(fn, '/');
-
-		// If there are no more slashes, we've located the basename and
-		// parent inode number already:
-		if (!nextsl) {
-			*bn = fn;
-			*in = curino;
-			free(hijackbuf);
-			return 0;
-		}
-
-		// Otherwise, lookup the next component of the path:
-		*nextsl = '\0';
-		struct fuse_out_header out;
-		req->response_hijack = &out;
-		req->response_hijack_buf = hijackbuf;
-		req->response_hijack_buflen = buflen;
-
-		fuse_ll_ops[FUSE_LOOKUP].func(req, curino, fn);
-
-		req->response_hijack = NULL;
-		req->response_hijack_buf = NULL;
-		*nextsl = '/';
-
-		if (out.error) {
-			free(hijackbuf);
-			return out.error;
-		}
-
-		struct fuse_entry_out *lookuparg = (struct fuse_entry_out *)hijackbuf;
-
-		curino = lookuparg->nodeid;
-		fn = nextsl + 1;
-	}
-}
-
-// Given a path in `fn', locate the inode for `fn'.
-// Returns negative if `fn' can't be found.
-static int fusent_get_inode(fuse_req_t req, char *fn, fuse_ino_t *in, char **bn)
-{
-	char path[FUSENT_MAX_PATH + 3];
-	size_t sl = strlen(fn);
-	memcpy(path, fn, sl);
-
-	// As a giant hack, fusenet_get_parent_inode doesn't care if the last
-	// "parent" component is a directory, so let's just abuse that to
-	// get the inode for now:
-	path[sl]   = '/';
-	path[sl+1] = 'a';
-	path[sl+2] = '\0';
-
-	char *bn_t;
-	int res = fusent_get_parent_inode(req, path, &bn_t, in);
-	if (bn && res >= 0) {
-		*bn = fn + (bn_t - path);
-	}
-	return res;
-}
-
-static inline NTSTATUS fusent_translate_errno(int err)
-{
-	if (err >= 0) return STATUS_SUCCESS;
-
-	switch (err) {
-		case EACCES: return STATUS_ACCESS_DENIED;
-		case EBADF: return STATUS_INVALID_HANDLE;
-		case ENOENT: return STATUS_NO_SUCH_FILE;
-		case EEXIST: return STATUS_CANNOT_MAKE;
-		case ENOSPC: break;
-		case ENOSYS: return STATUS_NOT_IMPLEMENTED;
-		case EAGAIN: return STATUS_RETRY;
-	}
-
-	return STATUS_UNSUCCESSFUL;
-}
-
-static inline void fusent_fill_resp(FUSENT_RESP *resp, IRP *pirp, FILE_OBJECT *fop, int error)
-{
-	memset(resp, 0, sizeof(FUSENT_RESP));
-	resp->pirp = pirp;
-	resp->fop = fop;
-	resp->error = error;
-	resp->status = fusent_translate_errno(error);
-}
-
-// Sends a response to the kernel. len is not always == sizeof(FUSENT_RESP),
-// so we need to take a parameter.
-static inline void fusent_sendmsg(fuse_req_t req, FUSENT_RESP *resp, size_t len)
-{
-	struct iovec iov;
-	iov.iov_base = resp;
-	iov.iov_len = len;
-
-	fuse_chan_send(req->ch, &iov, 1);
-}
-
-// Send an error reply back to the kernel:
-static void fusent_reply_error(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, int error)
-{
-	FUSENT_RESP resp;
-	fusent_fill_resp(&resp, pirp, fop, -error);
-	fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
-}
-
-// Send a successful response to an IRP_MJ_CREATE irp down to the kernel:
-static void fusent_reply_create(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop)
-{
-	fusent_reply_error(req, pirp, fop, 0);
-}
-
-// Send a successful response to an IRP_MJ_WRITE irp down to the kernel:
-static void fusent_reply_write(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint32_t written)
-{
-	FUSENT_RESP resp;
-	fusent_fill_resp(&resp, pirp, fop, 0);
-	resp.params.write.written = written;
-	fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
-}
-
-// Send a successful response to an IRP_MJ_READ irp down to the kernel:
-// buf should have space for a FUSENT_RESP at the beginning.
-// buflen includes this.
-static void fusent_reply_read(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint32_t buflen, char *buf)
-{
-	FUSENT_RESP *resp = (FUSENT_RESP *)buf;
-	fusent_fill_resp(resp, pirp, fop, 0);
-
-	uint32_t readlen = buflen - sizeof(FUSENT_RESP);
-	resp->params.read.buflen = readlen;
-
-	if (!readlen)
-		resp->status = STATUS_END_OF_FILE;
-
-	fusent_sendmsg(req, resp, buflen);
-}
-
-// Send a successful response to an IRP_MJ_DIRECTORY_CONTROL irp down to the kernel:
-// buf should have space for a FUSENT_RESP at the beginning.
-// buflen includes this.
-static void fusent_reply_dirctrl(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, uint32_t buflen, char *buf)
-{
-	FUSENT_RESP *resp = (FUSENT_RESP *)buf;
-	fusent_fill_resp(resp, pirp, fop, 0);
-
-	uint32_t readlen = buflen - sizeof(FUSENT_RESP);
-	resp->params.dirctrl.buflen = readlen;
-
-	fusent_sendmsg(req, resp, buflen);
-}
-
-static void fusent_reply_query_information(fuse_req_t req, PIRP pirp, PFILE_OBJECT fop, struct fuse_attr *st, WCHAR *basename)
-{
-	size_t buflen = sizeof(FUSENT_RESP) + sizeof(FUSENT_FILE_INFORMATION);
-	FUSENT_FILE_INFORMATION *fileinfo;
-	FUSENT_RESP *resp = malloc(buflen);
-
-	fileinfo = (FUSENT_FILE_INFORMATION*) (resp + 1);
-
-	// Fill in the standard header bits:
-	fusent_fill_resp(resp, pirp, fop, 0);
-
-	resp->params.query.buflen = sizeof(FUSENT_FILE_INFORMATION);
-
-	// Fill in the rest:
-	fusent_unixtime_to_wintime(st->atime, &fileinfo->LastAccessTime);
-	fusent_unixtime_to_wintime(st->mtime, &fileinfo->LastWriteTime);
-
-	// Take the most recent of {mtime,ctime} for windows' "changetime"
-	time_t ctime = (st->mtime > st->ctime)? st->mtime : st->ctime;
-	fusent_unixtime_to_wintime(ctime, &fileinfo->ChangeTime);
-
-	fusent_unixmode_to_winattr(st->mode, &fileinfo->FileAttributes);
-
-	fileinfo->AllocationSize.QuadPart = ((int64_t)st->blocks) * 512;
-	fileinfo->EndOfFile.QuadPart = (int64_t)st->size;
-	fileinfo->NumberOfLinks = st->nlink;
-	fileinfo->Directory = S_ISDIR(st->mode);
-
-	fileinfo->DeletePending = FALSE;
-	fusent_unixtime_to_wintime(0, &fileinfo->CreationTime);
-
-	fusent_sendmsg(req, resp, buflen);
-	free(resp);
-}
-
-// Handle an IRP_MJ_CREATE call
-static void fusent_do_create(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	// Some of the behavior here probably doesn't match
-	// one-to-one with NT. Does anyone actually use
-	// FILE_SUPERSEDE? We ignore a lot of CreateOptions flags.
-	// -- cemeyer
-
-	// Decode NT operation flags from IRP:
-	uint32_t CreateOptions = iosp->Parameters.Create.Options;
-	uint16_t ShareAccess = iosp->Parameters.Create.ShareAccess;
-	uint8_t CreateDisp = CreateOptions >> 24;
-
-	int issync = 0;
-	if ((CreateOptions & FILE_SYNCHRONOUS_IO_ALERT) ||
-			(CreateOptions & FILE_SYNCHRONOUS_IO_NONALERT) ||
-			(ntreq->irp.Flags & IRP_SYNCHRONOUS_API))
-		issync = 1;
-
-	int fuse_flags = 0, mode = S_IRWXU | S_IRWXG | S_IRWXO;
-	if (CreateDisp != FILE_OPEN && CreateDisp != FILE_OVERWRITE)
-		fuse_flags |= O_CREAT;
-	if (CreateDisp == FILE_CREATE) fuse_flags |= O_EXCL;
-	if (CreateDisp == FILE_OVERWRITE || CreateDisp == FILE_OVERWRITE_IF ||
-			CreateDisp == FILE_SUPERSEDE)
-		fuse_flags |= O_TRUNC;
-	if (CreateOptions & FILE_DIRECTORY_FILE) fuse_flags |= O_DIRECTORY;
-
-	// Extract the file path from the NT request:
-	uint32_t fnamelen;
-	uint16_t *fnamep;
-	fusent_decode_request_create((FUSENT_CREATE_REQ *)ntreq,
-			&fnamelen, &fnamep);
-
-	// Translate it to UTF8:
-	char *inbuf = (char *)fnamep;
-	size_t inbytes = fnamelen, outbytes = FUSENT_MAX_PATH-1;
-
-	char *llargs;
-	fuse_ino_t llinode;
-	int llop, err;
-
-	fuse_ino_t fino = 0;;
-	struct fuse_file_info *fi = NULL;
-
-	char *basename;
-	char *stbuf = malloc(FUSENT_MAX_PATH + max_sz(sizeof(struct fuse_create_in),
-				sizeof(struct fuse_open_in)));
-	char *outbuf, *outbuf2;
-
-	if (fuse_flags & O_CREAT)
-		outbuf = stbuf + sizeof(struct fuse_create_in);
-	else
-		outbuf = stbuf + sizeof(struct fuse_open_in);
-
-	outbuf2 = outbuf;
-
-	// Convert and then reset the cd
-	iconv(cd_utf16le_to_utf8, &inbuf, &inbytes, &outbuf, &outbytes);
-	iconv(cd_utf16le_to_utf8, NULL, NULL, NULL, NULL);
-	size_t utf8len = outbuf - outbuf2;
-
-	// Convert the path to a unix-like path
-	fusent_convert_win_path(outbuf2, &utf8len);
-
-	// A huge hack to make this work for helloworld.
-	// TODO(cemeyer) make this general purpose (for any directory):
-	// (This will require getattr'ing the file, I think.)
-	if (!strncmp(outbuf2, "/", utf8len)) {
-		fino = FUSE_ROOT_ID;
-		basename = malloc(strlen("/") + 1);
-		memcpy(basename, "/", strlen("/") + 1);
-		goto reply_create_nt;
-	}
-
-	if (fuse_flags & O_CREAT) {
-		// Look up inode for the parent directory of the file we want to create:
-		struct fuse_create_in *args = (struct fuse_create_in *)stbuf;
-		args->flags = fuse_flags;
-		args->umask = S_IXGRP | S_IXOTH;
-
-		fuse_ino_t par_inode;
-		if (fusent_get_parent_inode(req, outbuf2, &basename, &par_inode) < 0) {
-			err = ENOENT;
-			fprintf(stderr, "CREATE failed because parent does not exist: (%d)`%s' fnamep: (%d)`%S'\n", utf8len, outbuf2, fnamelen, fnamep);
-			goto reply_err_nt;
-		}
-
-		// creat() expects just the basename of the file:
-		memmove(outbuf2, basename, outbuf - basename);
-		outbuf2[outbuf - basename] = '\0';
-
-		llop = FUSE_CREATE;
-		llinode = par_inode;
-		llargs = (char *)args;
-	}
-	else {
-		// Lookup inode for the file we are to open:
-		struct fuse_open_in *args = (struct fuse_open_in *)stbuf;
-		args->flags = fuse_flags;
-
-		fuse_ino_t inode;
-		if (fusent_get_inode(req, outbuf2, &inode, &basename) < 0) {
-			err = ENOENT;
-			fprintf(stderr, "OPEN failed because path does not exist: `%s'\n", outbuf2);
-			goto reply_err_nt;
-		}
-
-		fprintf(stderr, "OPEN: resolved `%s' -> %lu\n", outbuf2, inode);
-
-		fino = inode;
-
-		llop = FUSE_OPEN;
-		llinode = inode;
-		llargs = (char *)args;
-	}
-
-	struct fuse_out_header outh;
-
-	// OPEN => fuse_open_out;
-	// CREATE => fuse_entry_out + fuse_open_out
-	const size_t buflen = sizeof(struct fuse_entry_out) +
-		sizeof(struct fuse_open_out);
-
-	char *giantbuf = malloc(buflen);
-	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf;
-	req->response_hijack_buflen = buflen;
-
-	fuse_ll_ops[llop].func(req, llinode, llargs);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		// outh.error will be >= -1000 and <= 0:
-		err = -outh.error;
-		free(giantbuf);
-		fprintf(stderr, "CREATE or OPEN failed (%s,%d): `%s'\n", strerror(-outh.error), -outh.error, outbuf2);
-		goto reply_err_nt;
-	}
-
-	struct fuse_open_out *openresp = (struct fuse_open_out *)giantbuf;
-	if (llop == FUSE_CREATE) {
-		openresp = (struct fuse_open_out *)(giantbuf + sizeof(struct fuse_entry_out));
-		fino = ((struct fuse_entry_out *)giantbuf)->nodeid;
-	}
-
-	fi = malloc(sizeof(struct fuse_file_info));
-	fi->fh = openresp->fh;
-	fi->flags = openresp->open_flags;
-	free(giantbuf);
-
-reply_create_nt:
-	fprintf(stderr, "CREATE|OPEN: replying success!\n");
-	fusent_add_fop_mapping(ntreq->fop, fi, fino, basename, issync);
-	fusent_reply_create(req, ntreq->pirp, ntreq->fop);
-	free(stbuf);
-	return;
-
-reply_err_nt:
-	free(stbuf);
-	fprintf(stderr, "CREATE|OPEN: replying error(%d) `%s'\n", err, strerror(err));
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_READ request
-static void fusent_do_read(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	PFILE_OBJECT fop = ntreq->fop;
-	ULONG len = iosp->Parameters.Read.Length;
-	LARGE_INTEGER off = iosp->Parameters.Read.ByteOffset;
-	int err;
-
-	struct fuse_file_info *fi = NULL;
-	fuse_ino_t inode = 0;
-	WCHAR *bn = NULL;
-	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
-		err = EBADF;
-		goto reply_err_nt;
-	}
-	if (!fi) {
-		err = EBADF;
-		fprintf(stderr, "READ: got fop without fi: %p\n", fop);
-		goto reply_err_nt;
-	}
-
-	uint64_t current_offset = fusent_get_file_offset(fop);
-
-	struct fuse_out_header outh;
-	char *giantbuf = malloc(sizeof(FUSENT_RESP) + len);
-	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf + sizeof(FUSENT_RESP);
-	req->response_hijack_buflen = len;
-
-	struct fuse_read_in readargs;
-	readargs.fh = fi->fh;
-	readargs.flags = fi->flags;
-	readargs.lock_owner = fi->lock_owner;
-	readargs.size = len;
-	readargs.offset = fusent_readwrite_offset(fop, current_offset, off);
-
-	fuse_ll_ops[FUSE_READ].func(req, inode, &readargs);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		free(giantbuf);
-		err = -outh.error;
-		goto reply_err_nt;
-	}
-
-	fusent_set_file_offset(fop, readargs.offset + outh.len - sizeof(struct fuse_out_header));
-
-	fusent_reply_read(req, ntreq->pirp, ntreq->fop,
-			outh.len - sizeof(struct fuse_out_header) + sizeof(FUSENT_RESP),
-			giantbuf);
-
-	free(giantbuf);
-	return;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_WRITE request
-static void fusent_do_write(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	PFILE_OBJECT fop = ntreq->fop;
-	ULONG len = iosp->Parameters.Write.Length;
-	LARGE_INTEGER off = iosp->Parameters.Write.ByteOffset;
-	int err;
-
-	struct fuse_file_info *fi = NULL;
-	fuse_ino_t inode = 0;
-	WCHAR *bn = NULL;
-	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
-		err = EBADF;
-		goto reply_err_nt;
-	}
-
-	uint32_t stoutbuf[sizeof(struct fuse_write_out) / sizeof(uint32_t)];
-	uint8_t *outbufp;
-	uint32_t outbuflen;
-	fusent_decode_request_write((FUSENT_WRITE_REQ *)ntreq, &outbuflen, &outbufp);
-
-	struct fuse_out_header outh;
-	req->response_hijack = &outh;
-
-	// If the buffer for us to write is large enough to serve dual purpose as
-	// the output buffer, use it:
-	if (outbuflen >= sizeof(struct fuse_write_out)) {
-		req->response_hijack_buf = (char *)outbufp;
-		req->response_hijack_buflen = outbuflen;
-	}
-	// Otherwise, use a temporary stack buffer:
-	else {
-		req->response_hijack_buf = (char *)stoutbuf;
-		req->response_hijack_buflen = sizeof(struct fuse_write_out);
-		memcpy(stoutbuf, outbufp, outbuflen);
-	}
-
-	uint64_t current_offset = fusent_get_file_offset(fop);
-
-	struct fuse_write_in writeargs;
-	writeargs.fh = fi->fh;
-	writeargs.flags = fi->flags;
-	writeargs.lock_owner = fi->lock_owner;
-	writeargs.size = len;
-	writeargs.offset = fusent_readwrite_offset(fop, current_offset, off);
-
-	fuse_ll_ops[FUSE_WRITE].func(req, inode, &writeargs);
-
-	uint32_t written = ((struct fuse_write_out *)req->response_hijack_buf)->size;
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		err = -outh.error;
-		goto reply_err_nt;
-	}
-
-	fusent_set_file_offset(fop, writeargs.offset + written);
-
-	fusent_reply_write(req, ntreq->pirp, ntreq->fop, written);
-	return;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Takes the given directory, opendirs it, readdirs it, and compiles a windows directory listing buffer
-// and throws that into the fusent_fop_dir_map hash table.
-//
-// Returns zero on success, error number on failure (positive).
-static int fusent_do_buffer_dirlisting(FUSENT_REQ *ntreq, EXTENDED_IO_STACK_LOCATION *irpsp, fuse_req_t req, fuse_ino_t inode)
-{
-	PFILE_OBJECT fop = ntreq->fop;
-	int err;
-
-	struct fuse_open_in openargs;
-	memset(&openargs, 0, sizeof(openargs));
-	openargs.flags = O_RDONLY;
-	
-	// For now, we ignore FILE_INFORMATION_CLASS and just return some set of fields
-	// to the kernel, which sorts out which fields each request needs.
-	// FILE_INFORMATION_CLASS fic = irpsp->Parameters.QueryDirectory.FileInformationClass;
-	
-	uint32_t len = 8192; // Arbitrary length --cemeyer
-	uint32_t fusebuflen = 8192;
-
-	struct fuse_out_header outh;
-	char *giantbuf = malloc(fusebuflen);
-	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf;
-	req->response_hijack_buflen = fusebuflen;
-
-	fuse_ll_ops[FUSE_OPENDIR].func(req, inode, &openargs);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		err = -outh.error;
-		free(giantbuf);
-		fprintf(stderr, "OPENDIR failed (%s, %d)\n", strerror(err), err);
-		return err;
-	}
-	
-	struct fuse_open_out *outargs = (struct fuse_open_out *)giantbuf;
-	
-	struct fuse_file_info fi2;
-	memset(&fi2, 0, sizeof(fi2));
-	fi2.fh = outargs->fh;
-	fi2.flags = outargs->open_flags;
-	
-	fprintf(stderr, "OPENDIR succeeded!\n");
-	
-	struct fuse_read_in readargs;
-	readargs.fh = fi2.fh;
-	readargs.flags = fi2.flags;
-	readargs.lock_owner = fi2.lock_owner;
-	readargs.size = fusebuflen;
-	readargs.offset = 0; // TODO: care about this
-	
-	req->response_hijack = &outh;
-	req->response_hijack_buf = giantbuf;
-	req->response_hijack_buflen = fusebuflen;
-
-	fuse_ll_ops[FUSE_READDIR].func(req, inode, &readargs);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		err = -outh.error;
-		free(giantbuf);
-		fprintf(stderr, "READDIR failed (%s, %d)\n", strerror(err), err);
-		// TODO releasedir
-		return err;
-	}
-	
-	char *p = giantbuf;
-	size_t nbytes = outh.len - sizeof(struct fuse_out_header);
-
-	char *outbuf = malloc(len);
-	char *o = outbuf;
-	size_t nbytesout = len;
-
-	// Hack (stolen from kernel/fuse_i.h):
-#define FUSE_NAME_MAX 1024
-
-	// Ripped more or less directly from the Linux kernel fuse fs function parse_dirfile in dir.c:
-	// Well, modified quite a bit now --cemeyer
-	WCHAR *fnbuf = malloc((FUSE_NAME_MAX+1) * sizeof(WCHAR));
-	FILE_DIRECTORY_INFORMATION *lastfdi = NULL;
-	while (nbytes >= FUSE_NAME_OFFSET && nbytesout >= sizeof(FILE_DIRECTORY_INFORMATION)) {
-		struct fuse_dirent *dirent = (struct fuse_dirent *)p;
-		size_t reclen = fuse_dirent_size(dirent->namelen);
-
-		// The fuse module gave us bad input; well, fuck...
-		if (!dirent->namelen || dirent->namelen > FUSE_NAME_MAX) {
-			err = EIO;
-			free(fnbuf);
-			free(outbuf);
-			free(giantbuf);
-			return err;
-		}
-		if (reclen > nbytes) break;
-
-		FILE_DIRECTORY_INFORMATION *fdient = (FILE_DIRECTORY_INFORMATION *)o;
-		size_t utf16lenbytes = fusent_transcode(dirent->name, dirent->namelen, fnbuf, FUSE_NAME_MAX*sizeof(WCHAR), "UTF-8", "UTF-16LE");
-		fnbuf[utf16lenbytes / (sizeof(WCHAR))] = (WCHAR)0;
-
-		size_t fdilen = fusent_fdient_size(utf16lenbytes);
-		if (fdilen > nbytesout) break;
-
-		fprintf(stderr, "dirctrl: dirent->name: %.*s\treclen:0x%.8x\tino: %llu\n", (int)dirent->namelen, dirent->name, reclen, dirent->ino);
-
-		struct fuse_attr_out attr;
-		struct fuse_out_header outh2;
-		struct fuse_getattr_in args = { 0, 0, 0 };
-
-		// TODO lookup first if dirent->ino == FUSE_UNKNOWN_INO
-		//req->response_hijack = &outh2;
-		//req->response_hijack_buf = (char *)&attr;
-		//req->response_hijack_buflen = sizeof(struct fuse_attr_out);
-
-		//fuse_ll_ops[FUSE_GETATTR].func(req, dirent->ino, &args);
-
-		//req->response_hijack = NULL;
-		//req->response_hijack_buf = NULL;
-
-		//if (outh2.error) {
-		//	err = -outh2.error;
-		//	free(giantbuf);
-		//	free(fnbuf);
-		//	free(outbuf);
-		//	fprintf(stderr, "GETATTR failed mid-DIR_CONTROL (%s, %d)\n", strerror(err), err);
-		//	return err;
-		//}
-
-		memset(&attr, 0, sizeof(struct fuse_attr_out)); // temporary
-		struct fuse_attr *st = &attr.attr;
-
-		fdient->NextEntryOffset = fdilen;
-		fdient->FileIndex = 0; // we pick an arbitrary value; this is undefined on all but FAT anyways.
-
-		// Most of this is stolen from fusent_reply_query
-		fusent_unixtime_to_wintime(0, &fdient->CreationTime);
-		fusent_unixtime_to_wintime(st->atime, &fdient->LastAccessTime);
-		fusent_unixtime_to_wintime(st->mtime, &fdient->LastWriteTime);
-
-		// Take the most recent of {mtime,ctime} for windows' "changetime"
-		time_t ctime = (st->mtime > st->ctime)? st->mtime : st->ctime;
-		fusent_unixtime_to_wintime(ctime, &fdient->ChangeTime);
-
-		fdient->AllocationSize.QuadPart = ((int64_t)st->blocks) * 512;
-		fdient->EndOfFile.QuadPart = (int64_t)st->size;
-		fusent_unixmode_to_winattr(st->mode, &fdient->FileAttributes);
-		fdient->FileNameLength = utf16lenbytes;
-		memcpy(fdient->FileName, fnbuf, utf16lenbytes);
-
-		lastfdi = fdient;
-
-		p += reclen;
-		o += fdilen;
-		nbytes -= reclen;
-		nbytesout -= fdilen;
-		//fusent_set_file_offset(fop, fusent_get_file_offset(fop) + nbytes);
-	}
-	free(fnbuf);
-	free(giantbuf);
-
-	FUSENT_DIRLISTING *dl = malloc(sizeof(FUSENT_DIRLISTING));
-	dl->off = 0;
-	dl->len = 0;
-	dl->listing = NULL;
-	dl->singlefile = 0;
-	if (lastfdi) {
-		lastfdi->NextEntryOffset = 0;
-		dl->len = ((char *)lastfdi->FileName) + lastfdi->FileNameLength - outbuf;
-		dl->listing = outbuf;
-	}
-	else {
-		free(outbuf);
-	}
-
-	st_insert(fusent_fop_dirlisting_map, (st_data_t)fop, (st_data_t)dl);
-
-	// TODO release dir
-
-	return 0;
-}
-
-// Handle an IRP_MJ_DIRECTORY_CONTROL request
-static void fusent_do_directory_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	PFILE_OBJECT fop = ntreq->fop;
-	int err;
-	
-	// For more info on these params, see the MSDN on IRP_MJ_DIRECTORY_CONTROL:
-	// http://msdn.microsoft.com/en-us/library/ff548658(v=vs.85).aspx
-	EXTENDED_IO_STACK_LOCATION *irpsp = (EXTENDED_IO_STACK_LOCATION *)iosp;
-	UCHAR flags = irpsp->Flags;
-	if (irpsp->MinorFunction != IRP_MN_QUERY_DIRECTORY) {
-		err = ENOSYS;
-		goto reply_err_nt;
-	}
-	
-	// Make sure this file has already been opened:
-	struct fuse_file_info *fi = NULL;
-	fuse_ino_t inode = 0;
-	WCHAR* bn = NULL;
-	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &bn) < 0) {
-		err = EBADF;
-		goto reply_err_nt;
-	}
-
-	// Check if the dir listing asks for a restart, or if not, if we don't
-	// already have a buffer sitting somewhere:
-	int restart = 0;
-	if (!st_is_member(fusent_fop_dirlisting_map, (st_data_t)fop)) {
-		restart = 1;
-	}
-	else if (irpsp->Flags & SL_RESTART_SCAN) {
-		restart = 1;
-
-		// Nuke the dirlisting buffer from the map:
-		st_data_t irfop = (st_data_t)fop,
-			  rdl;
-		st_lookup(fusent_fop_dirlisting_map, irfop, &rdl);
-		FUSENT_DIRLISTING *dl = (FUSENT_DIRLISTING *)rdl;
-		if (dl->listing) free(dl->listing);
-		irfop = (st_data_t)fop;
-		st_delete(fusent_fop_dirlisting_map, &irfop, NULL);
-	}
-
-	if (restart) {
-		err = fusent_do_buffer_dirlisting(ntreq, irpsp, req, inode);
-		if (err) goto reply_err_nt;
-	}
-
-	st_data_t rdl;
-	st_lookup(fusent_fop_dirlisting_map, (st_data_t)fop, &rdl);
-	FUSENT_DIRLISTING *dl = (FUSENT_DIRLISTING *)rdl;
-
-	// If we've already traversed the entire directory:
-	if (dl->off >= dl->len) {
-		fprintf(stderr, "DIRECTORY_CONTROL: NO MORE FILES\n");
-		FUSENT_RESP resp;
-		fusent_fill_resp(&resp, ntreq->pirp, fop, 0);
-		resp.status = STATUS_NO_MORE_FILES;
-		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
-		return;
-	}
-
-	// Otherwise, copy as many as will fit into the waiting buf,
-	// and update offset:
-	size_t bytesleft = irpsp->Parameters.QueryDirectory.Length;
-	char *outbuf = malloc(sizeof(FUSENT_RESP) + bytesleft);
-	char *o = outbuf + sizeof(FUSENT_RESP);
-	char *p = dl->listing + dl->off;
-
-	int recordscopied = 0;
-	FILE_DIRECTORY_INFORMATION *lastfdi = NULL;
-	while (bytesleft >= sizeof(FILE_DIRECTORY_INFORMATION) && p < dl->listing + dl->len) {
-		FILE_DIRECTORY_INFORMATION *fdient = (FILE_DIRECTORY_INFORMATION *)p;
-		size_t fdilen = fusent_fdient_size(fdient->FileNameLength);
-
-		if (bytesleft < fdilen) break;
-
-		memcpy(o, p, fdilen);
-		lastfdi = (FILE_DIRECTORY_INFORMATION *)o;
-		o += fdilen;
-		p += fdilen;
-		bytesleft -= fdilen;
-		recordscopied ++;
-
-		fprintf(stderr, "  DIRCTRL: record->fnlen: %u\n", (unsigned)fdient->FileNameLength);
-
-		if (!fdient->NextEntryOffset) break;
-		if (irpsp->Flags & SL_RETURN_SINGLE_ENTRY) {
-			dl->singlefile = 1;
-			break;
-		}
-		if (dl->singlefile) break;
-	}
-
-	fprintf(stderr, "Records copied: %d\n", recordscopied);
-
-	// Buffer was too small to fit any entries:
-	// We are supposed to shove part of it in? I'm not sure
-	// how this should work; whatever:
-	if (!lastfdi) {
-		fprintf(stderr, "DIRECTORY_CONTROL: BUF TOO SMALL\n");
-		FUSENT_RESP resp;
-		fusent_fill_resp(&resp, ntreq->pirp, fop, 0);
-		resp.status = STATUS_BUFFER_OVERFLOW;
-		fusent_sendmsg(req, &resp, sizeof(FUSENT_RESP));
-		free(outbuf);
-		return;
-	}
-
-	// Last entry points to zero
-	lastfdi->NextEntryOffset = 0;
-	
-	// Update directory "progress"
-	fprintf(stderr, "DIRCTL: Advance dir offset from %llu to %llu\n", dl->off, (uint64_t)(p - dl->listing));
-	dl->off = p - dl->listing;
-
-	// Reply with a big fat buf!
-	fprintf(stderr, "DIRCTL: Replying with a N-byte buf: %08x (header: %08x)\n", o - outbuf, sizeof(FUSENT_RESP));
-	fusent_reply_dirctrl(req, ntreq->pirp, fop, o - outbuf, outbuf);
-	free(outbuf);
-	return;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_CLEANUP request
-static void fusent_do_cleanup(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	// TODO flush
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, 0);
-}
-
-// Handle an IRP_MJ_CLOSE request
-static void fusent_do_close(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: flush, release
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-/*
-// Handle an IRP_MJ_DEVICE_CONTROL request
-static void fusent_do_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_FILE_SYSTEM_CONTROL request
-static void fusent_do_file_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-*/
-
-// Handle an IRP_MJ_FLUSH_BUFFERS request
-static void fusent_do_flush_buffers(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-/*
-// Handle an IRP_MJ_INTERNAL_DEVICE_CONTROL request
-static void fusent_do_internal_device_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_PNP request
-static void fusent_do_pnp(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_POWER request
-static void fusent_do_power(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-*/
-
-// Handle an IRP_MJ_QUERY_INFORMATION request
-static void fusent_do_query_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	PFILE_OBJECT fop = ntreq->fop;
-	int err;
-
-	struct fuse_file_info *fi = NULL;
-	fuse_ino_t inode = 0;
-	WCHAR *basename = NULL;
-	if (fusent_fi_inode_basename_from_fop(fop, &fi, &inode, &basename) < 0) {
-		err = EBADF;
-		goto reply_err_nt;
-	}
-
-	struct fuse_out_header outh;
-	struct fuse_attr_out attr;
-	struct fuse_getattr_in args = { 0, 0, 0 };
-
-	req->response_hijack = &outh;
-	req->response_hijack_buf = (char *)&attr;
-	req->response_hijack_buflen = sizeof(struct fuse_attr_out);
-
-	fuse_ll_ops[FUSE_GETATTR].func(req, inode, &args);
-
-	req->response_hijack = NULL;
-	req->response_hijack_buf = NULL;
-
-	if (outh.error) {
-		err = -outh.error;
-		fprintf(stderr, "QUERY_INFO failed (%s, %d)\n", strerror(err), err);
-		goto reply_err_nt;
-	}
-
-	fusent_reply_query_information(req, ntreq->pirp, ntreq->fop, &attr.attr, basename);
-	return;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-/*
-// Handle an IRP_MJ_SET_INFORMATION request
-static void fusent_do_set_information(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_SHUTDOWN request
-static void fusent_do_shutdown(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-// Handle an IRP_MJ_SYSTEM_CONTROL request
-static void fusent_do_system_control(FUSENT_REQ *ntreq, IO_STACK_LOCATION *iosp, fuse_req_t req)
-{
-	UCHAR flags = iosp->Flags;
-	int err;
-
-	// TODO: fill in this function stub
-
-	err = ENOSYS;
-	goto reply_err_nt;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-*/
-
-// Initialize FUSE (HACK)
-static void fusent_do_init(struct fuse_ll *f)
-{
-	// TODO(cemeyer) call do_init or whatever fuse calls. low priority.
-
-	f->got_init = 1;
-
-	// stolen from the 2.6.38 kernel
-	f->conn.proto_major = 7;
-	f->conn.proto_minor = 16;
-
-	f->conn.capable = 0;
-	f->conn.want = 0;
-	f->conn.async_read = 0;
-	if (f->op.init) f->op.init(f->userdata, &f->conn);
-
-	// This might be good enough:
-	f->conn.max_write = 8192;
-}
-
-// Handle incoming FUSE-NT protocol messages:
-static void fusent_ll_process(void *data, const char *buf, size_t len,
-		struct fuse_chan *ch)
-{
-	struct fuse_ll *f = (struct fuse_ll *) data;
-	struct fuse_req *req;
-	int err;
-
-	FUSENT_REQ *ntreq = (FUSENT_REQ *)buf;
-
-	req = (struct fuse_req *) calloc(1, sizeof(struct fuse_req));
-	if (req == NULL) {
-		fprintf(stderr, "fuse: failed to allocate request\n");
-		return;
-	}
-
-	if (!f->got_init) {
-		fusent_do_init(f);
-	}
-
-	req->f = f;
-	req->unique = 0; // this might not be needed except for interrupts --cemeyer
-	req->ctx.uid = 0; // not sure these have any correct meanings
-	req->ctx.gid = 0;
-	req->ctx.pid = 0; // what is this used for? maybe need to pass as part of the request --cemeyer
-	req->ch = ch;
-	req->ctr = 1;
-	req->response_hijack = NULL;
-	list_init_req(req);
-	fuse_mutex_init(&req->lock);
-
-	int status;
-	IO_STACK_LOCATION *iosp;
-	uint8_t irptype;
-
-	err = EIO;
-
-	status = fusent_decode_irp(&ntreq->irp, &ntreq->iostack[0], &irptype, &iosp);
-	if (status < 0) goto reply_err_nt;
-
-	switch (irptype) {
-		case IRP_MJ_CREATE:
-			fprintf(stderr, "fusent: got CREATE on %p\n", ntreq->fop);
-			fusent_do_create(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_READ:
-			fprintf(stderr, "fusent: got READ on %p\n", ntreq->fop);
-			fusent_do_read(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_WRITE:
-			fusent_do_write(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_DIRECTORY_CONTROL:
-			fprintf(stderr, "fusent: got DIRECTORY_CONTROL on %p\n", ntreq->fop);
-			fusent_do_directory_control(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_CLEANUP:
-			fprintf(stderr, "fusent: got CLEANUP on %p\n", ntreq->fop);
-			fusent_do_cleanup(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_CLOSE:
-			fprintf(stderr, "fusent: got CLOSE on %p\n", ntreq->fop);
-			fusent_do_close(ntreq, iosp, req);
-			break;
-
-		/*
-		case IRP_MJ_DEVICE_CONTROL:
-			fusent_do_device_control(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_FILE_SYSTEM_CONTROL:
-			fusent_do_file_system_control(ntreq, iosp, req);
-			break;
-		*/
-
-		case IRP_MJ_FLUSH_BUFFERS:
-			fusent_do_flush_buffers(ntreq, iosp, req);
-			break;
-
-		/*
-		case IRP_MJ_INTERNAL_DEVICE_CONTROL:
-			fusent_do_internal_device_control(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_PNP:
-			fusent_do_pnp(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_POWER:
-			fusent_do_power(ntreq, iosp, req);
-			break;
-		*/
-
-		case IRP_MJ_QUERY_INFORMATION:
-			fprintf(stderr, "fusent: got QUERY_INFORMATION on %p\n", ntreq->fop);
-			fusent_do_query_information(ntreq, iosp, req);
-			break;
-
-		/*
-		case IRP_MJ_SET_INFORMATION:
-			fusent_do_set_information(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_SHUTDOWN:
-			fusent_do_shutdown(ntreq, iosp, req);
-			break;
-
-		case IRP_MJ_SYSTEM_CONTROL:
-			fusent_do_system_control(ntreq, iosp, req);
-			break;
-		*/
-
-		default:
-			err = ENOSYS;
-			goto reply_err_nt;
-	}
-	return;
-
-reply_err_nt:
-	fusent_reply_error(req, ntreq->pirp, ntreq->fop, err);
-}
-
-#else /* __CYGWIN__ */
 
 static void fuse_ll_process(void *data, const char *buf, size_t len,
 			    struct fuse_chan *ch)
 {
 	struct fuse_ll *f = (struct fuse_ll *) data;
+	struct fuse_in_header *in = (struct fuse_in_header *) buf;
+	const void *inarg = buf + sizeof(struct fuse_in_header);
 	struct fuse_req *req;
 	int err;
 
-	struct fuse_in_header *in = (struct fuse_in_header *) buf;
-	const void *inarg = buf + sizeof(struct fuse_in_header);
-
 	if (f->debug)
 		fprintf(stderr,
-				"unique: %llu, opcode: %s (%i), nodeid: %lu, insize: %zu\n",
-				(unsigned long long) in->unique,
-				opname((enum fuse_opcode) in->opcode), in->opcode,
-				(unsigned long) in->nodeid, len);
+			"unique: %llu, opcode: %s (%i), nodeid: %lu, insize: %zu\n",
+			(unsigned long long) in->unique,
+			opname((enum fuse_opcode) in->opcode), in->opcode,
+			(unsigned long) in->nodeid, len);
 
 	req = (struct fuse_req *) calloc(1, sizeof(struct fuse_req));
 	if (req == NULL) {
@@ -2963,10 +1514,9 @@ static void fuse_ll_process(void *data, const char *buf, size_t len,
 	fuse_ll_ops[in->opcode].func(req, in->nodeid, inarg);
 	return;
 
-reply_err:
+ reply_err:
 	fuse_reply_err(req, err);
 }
-#endif /* !__CYGWIN__ */
 
 enum {
 	KEY_HELP,
@@ -3062,11 +1612,7 @@ struct fuse_session *fuse_lowlevel_new_common(struct fuse_args *args,
 	struct fuse_ll *f;
 	struct fuse_session *se;
 	struct fuse_session_ops sop = {
-#if defined __CYGWIN__
-		.process = fusent_ll_process,
-#else
 		.process = fuse_ll_process,
-#endif
 		.destroy = fuse_ll_destroy,
 	};
 
@@ -3119,7 +1665,7 @@ struct fuse_session *fuse_lowlevel_new(struct fuse_args *args,
 	return fuse_lowlevel_new_common(args, op, op_size, userdata);
 }
 
-#if defined(linux) && !defined(__CYGWIN__)
+#ifdef linux
 int fuse_req_getgroups(fuse_req_t req, int size, gid_t list[])
 {
 	char *buf;
@@ -3188,7 +1734,7 @@ int fuse_req_getgroups(fuse_req_t req, int size, gid_t list[])
 }
 #endif
 
-#if !defined __FreeBSD__ && !defined __CYGWIN__
+#ifndef __FreeBSD__
 
 static void fill_open_compat(struct fuse_open_out *arg,
 			     const struct fuse_file_info_compat *f)
@@ -3290,7 +1836,7 @@ FUSE_SYMVER(".symver fuse_reply_statfs_compat,fuse_reply_statfs@FUSE_2.4");
 FUSE_SYMVER(".symver fuse_reply_open_compat,fuse_reply_open@FUSE_2.4");
 FUSE_SYMVER(".symver fuse_lowlevel_new_compat,fuse_lowlevel_new@FUSE_2.4");
 
-#else /* __FreeBSD__ || __CYGWIN__ */
+#else /* __FreeBSD__ */
 
 int fuse_sync_compat_args(struct fuse_args *args)
 {
@@ -3298,9 +1844,7 @@ int fuse_sync_compat_args(struct fuse_args *args)
 	return 0;
 }
 
-#endif /* __FreeBSD__ || __CYGWIN__ */
-
-#ifndef __CYGWIN__
+#endif /* __FreeBSD__ */
 
 struct fuse_session *fuse_lowlevel_new_compat25(struct fuse_args *args,
 				const struct fuse_lowlevel_ops_compat25 *op,
@@ -3315,5 +1859,3 @@ struct fuse_session *fuse_lowlevel_new_compat25(struct fuse_args *args,
 }
 
 FUSE_SYMVER(".symver fuse_lowlevel_new_compat25,fuse_lowlevel_new@FUSE_2.5");
-
-#endif /* __CYGWIN__ */

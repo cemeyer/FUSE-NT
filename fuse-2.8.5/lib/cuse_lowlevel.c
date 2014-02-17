@@ -7,8 +7,6 @@
   See the file COPYING.LIB.
 */
 
-#ifndef __CYGWIN__
-
 #include "cuse_lowlevel.h"
 #include "fuse_kernel.h"
 #include "fuse_i.h"
@@ -371,5 +369,3 @@ int cuse_lowlevel_main(int argc, char *argv[], const struct cuse_info *ci,
 
 	return 0;
 }
-
-#endif

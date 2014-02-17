@@ -11,14 +11,7 @@
 #include "fuse_misc.h"
 #include "fuse_opt.h"
 #include "fuse_common_compat.h"
-#include "fuse_fs_defines.h"
 #include "mount_util.h"
-
-#ifdef __CYGWIN__
-# include "fusent_proto.h"
-# include <ctype.h>
-# include <wchar.h>
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,10 +62,6 @@ struct mount_opts {
 	char *fusermount_opts;
 	char *kernel_opts;
 };
-
-#ifdef __CYGWIN__
-char *fusent_argv0;
-#endif
 
 #define FUSE_MOUNT_OPT(t, p) { t, offsetof(struct mount_opts, p), 1 }
 
@@ -276,13 +265,6 @@ static int receive_fd(int fd)
 	return *(int*)CMSG_DATA(cmsg);
 }
 
-#if defined __CYGWIN__
-void fuse_kern_unmount(const char *mountpoint, HANDLE fd)
-{
-	// TODO(cemeyer)
-	fprintf(stderr, "fuse_kern_unmount() got called.\n");
-}
-#else
 void fuse_kern_unmount(const char *mountpoint, int fd)
 {
 	int res;
@@ -297,13 +279,13 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 		pfd.fd = fd;
 		pfd.events = 0;
 		res = poll(&pfd, 1, 0);
-		// If file poll returns POLLERR on the device file descriptor,
-		// then the filesystem is already unmounted
+		/* If file poll returns POLLERR on the device file descriptor,
+		   then the filesystem is already unmounted */
 		if (res == 1 && (pfd.revents & POLLERR))
 			return;
 
-		// Need to close file descriptor, otherwise synchronous umount
-		// would recurse into filesystem, and deadlock
+		/* Need to close file descriptor, otherwise synchronous umount
+		   would recurse into filesystem, and deadlock */
 		close(fd);
 	}
 
@@ -329,14 +311,11 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 	}
 	waitpid(pid, NULL, 0);
 }
-#endif
 
-#ifndef __CYGWIN__
 void fuse_unmount_compat22(const char *mountpoint)
 {
 	fuse_kern_unmount(mountpoint, -1);
 }
-#endif
 
 static int fuse_mount_fusermount(const char *mountpoint, const char *opts,
 				 int quiet)
@@ -406,12 +385,9 @@ int fuse_mount_compat22(const char *mountpoint, const char *opts)
 	return fuse_mount_fusermount(mountpoint, opts, 0);
 }
 
-#ifndef __CYGWIN__
 static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			  const char *mnt_opts)
 {
-	printf("fuse_mount_sys\n");
-	
 	char tmp[128];
 	const char *devname = "/dev/fuse";
 	char *source = NULL;
@@ -476,7 +452,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 
 	res = mount(source, mnt, type, mo->flags, mo->kernel_opts);
 	if (res == -1 && errno == ENODEV && mo->subtype) {
-		// Probably missing subtype support
+		/* Probably missing subtype support */
 		strcpy(type, mo->blkdev ? "fuseblk" : "fuse");
 		if (mo->fsname) {
 			if (!mo->blkdev)
@@ -488,8 +464,10 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 		res = mount(source, mnt, type, mo->flags, mo->kernel_opts);
 	}
 	if (res == -1) {
-		 // Maybe kernel doesn't support unprivileged mounts, in this
-		 // case try falling back to fusermount
+		/*
+		 * Maybe kernel doesn't support unprivileged mounts, in this
+		 * case try falling back to fusermount
+		 */
 		if (errno == EPERM) {
 			res = -2;
 		} else {
@@ -518,21 +496,19 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 		if (res == -1)
 			goto out_umount;
 	}
-
 	free(type);
 	free(source);
 
 	return fd;
 
 out_umount:
-	umount2(mnt, 2); // lazy umount
+	umount2(mnt, 2); /* lazy umount */
 out_close:
 	free(type);
 	free(source);
 	close(fd);
 	return res;
 }
-#endif
 
 static int get_mnt_flag_opts(char **mnt_optsp, int flags)
 {
@@ -549,11 +525,7 @@ static int get_mnt_flag_opts(char **mnt_optsp, int flags)
 	return 0;
 }
 
-#if defined __CYGWIN__
-int fusent_kern_mount(const char *mountpoint, struct fuse_args *args, HANDLE *fd)
-#else
 int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
-#endif
 {
 	struct mount_opts mo;
 	int res = -1;
@@ -582,83 +554,6 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 	if (mo.mtab_opts &&  fuse_opt_add_opt(&mnt_opts, mo.mtab_opts) == -1)
 		goto out;
 
-#if defined __CYGWIN__
-	if (!mountpoint || strlen(mountpoint) != 2 || !isalpha((int)mountpoint[0]) ||
-			mountpoint[1] != ':') {
-		fprintf(stderr, "fusent: mountpoint is only allowed to be an (unused) drive, e.g. `U:'\n");
-		goto out;
-	}
-
-# define FUSE_DEV_MAXLEN 80
-# define FUSE_ARGV0_LEN 40
-	char devnameb[FUSE_DEV_MAXLEN];
-	char argv0name[FUSE_ARGV0_LEN];
-
-	char *slptr = strrchr(fusent_argv0, '/');
-	if (!slptr) slptr = fusent_argv0;
-	else slptr += 1; // skip slash
-
-	strncpy(argv0name, slptr, FUSE_ARGV0_LEN);
-	argv0name[FUSE_ARGV0_LEN-1] = '\0';
-
-	if (snprintf(devnameb, FUSE_DEV_MAXLEN, "\\Device\\Fuse\\%s-%d",
-				argv0name, getpid()) > FUSE_DEV_MAXLEN) {
-		fprintf(stderr, "fusent: argv[0] + pid is larger than %d chars (`%s-%d')\n",
-				FUSE_DEV_MAXLEN-1, fusent_argv0, getpid());
-		goto out;
-	}
-
-	size_t devlen = strlen(devnameb);
-	WCHAR devnamebwc[FUSE_DEV_MAXLEN];
-
-	if (fusent_transcode(devnameb, devlen, devnamebwc, sizeof(WCHAR) * FUSE_DEV_MAXLEN,
-				"US-ASCII", "UTF-16LE") != devlen * sizeof(WCHAR)) {
-		fprintf(stderr, "fusent: error transcoding devname (`%s') to WCHAR\n",
-				devnameb);
-		goto out;
-	}
-
-	// Null-terminate for RtlInitUnicodeString
-	devnamebwc[devlen] = (WCHAR)0;
-
-	UNICODE_STRING unidev;
-	RtlInitUnicodeString(&unidev, devnamebwc);
-
-	OBJECT_ATTRIBUTES oa;
-	InitializeObjectAttributes(&oa, &unidev, 0, NULL, NULL);
-
-	// Open the \\Device\\Fuse\\Blah handle
-	IO_STATUS_BLOCK iosb;
-	NTSTATUS stat = NtCreateFile(fd, GENERIC_READ | GENERIC_WRITE,
-			&oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL,
-			FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN,
-			FILE_WRITE_THROUGH, NULL, 0);
-
-	if (stat != STATUS_SUCCESS) {
-		fprintf(stderr, "fusent: failed to open device file (0x%08x)\n", (unsigned)stat);
-		goto out;
-	}
-
-	// Send "mount" signal to kernel module
-	stat = NtFsControlFile(*fd, NULL, NULL, NULL, &iosb, IRP_FUSE_MOUNT, NULL, 0, NULL, 0);
-
-	if (stat != STATUS_SUCCESS) {
-		fprintf(stderr, "fusent: mount ACK failed (0x%08x)\n", (unsigned)stat);
-		CloseHandle(fd);
-		goto out;
-	}
-
-	if (!DefineDosDevice(DDD_RAW_TARGET_PATH, mountpoint, devnameb)) {
-		// Drive letter creation failed:
-		DWORD winerr = GetLastError();
-		fprintf(stderr, "fusent: got error mounting device on `%s': %08x\n",
-				mountpoint, winerr);
-		goto out;
-	}
-	
-	// Declare mount a success:
-	res = 0;
-#else
 	res = fuse_mount_sys(mountpoint, &mo, mnt_opts);
 	if (res == -2) {
 		if (mo.fusermount_opts &&
@@ -684,8 +579,6 @@ int fuse_kern_mount(const char *mountpoint, struct fuse_args *args)
 			res = fuse_mount_fusermount(mountpoint, mnt_opts, 0);
 		}
 	}
-#endif
-
 out:
 	free(mnt_opts);
 	free(mo.fsname);
@@ -696,3 +589,6 @@ out:
 	free(mo.mtab_opts);
 	return res;
 }
+
+FUSE_SYMVER(".symver fuse_mount_compat22,fuse_mount@FUSE_2.2");
+FUSE_SYMVER(".symver fuse_unmount_compat22,fuse_unmount@FUSE_2.2");

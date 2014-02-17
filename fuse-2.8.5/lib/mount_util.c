@@ -21,7 +21,6 @@
 #include <sys/mount.h>
 #include <sys/param.h>
 
-#ifndef __CYGWIN__
 static int mtab_needs_update(const char *mnt)
 {
 	int res;
@@ -360,4 +359,3 @@ int fuse_mnt_check_fuseblk(void)
 	fclose(f);
 	return 0;
 }
-#endif /* !__CYGWIN__ */
