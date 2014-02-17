@@ -1,6 +1,7 @@
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/example/hello.c fuse-2.8.5/example/hello.c
---- fuse-2.8.5.orig/example/hello.c	2010-06-23 09:04:14.000000000 -0400
-+++ fuse-2.8.5/example/hello.c	2013-04-04 02:50:39.070946742 -0400
+Index: fuse-2.8.5/example/hello.c
+===================================================================
+--- fuse-2.8.5.orig/example/hello.c
++++ fuse-2.8.5/example/hello.c
 @@ -1,91 +1,114 @@
  /*
    FUSE: Filesystem in Userspace
@@ -118,9 +119,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	.open		= hello_open,
  	.read		= hello_read,
  };
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/fakekern/fuseclient.c fuse-2.8.5/fakekern/fuseclient.c
---- fuse-2.8.5.orig/fakekern/fuseclient.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/fakekern/fuseclient.c	2013-04-04 02:50:39.070946742 -0400
+Index: fuse-2.8.5/fakekern/fuseclient.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/fakekern/fuseclient.c
 @@ -0,0 +1,60 @@
 +#include <sys/socket.h>
 +#include <sys/types.h>
@@ -182,9 +184,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +}
 +
 +
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/fakekern/fuseserver.c fuse-2.8.5/fakekern/fuseserver.c
---- fuse-2.8.5.orig/fakekern/fuseserver.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/fakekern/fuseserver.c	2013-04-04 02:50:39.070946742 -0400
+Index: fuse-2.8.5/fakekern/fuseserver.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/fakekern/fuseserver.c
 @@ -0,0 +1,78 @@
 +#include <sys/socket.h>
 +#include <sys/types.h>
@@ -264,11 +267,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +}
 +
 +
-Binary files fuse-2.8.5.orig/fakekern/fusesocket.sdf and fuse-2.8.5/fakekern/fusesocket.sdf differ
-Binary files fuse-2.8.5.orig/fakekern/fusesocket.suo and fuse-2.8.5/fakekern/fusesocket.suo differ
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/fakekern/Makefile fuse-2.8.5/fakekern/Makefile
---- fuse-2.8.5.orig/fakekern/Makefile	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/fakekern/Makefile	2013-04-04 02:50:39.070946742 -0400
+Index: fuse-2.8.5/fakekern/Makefile
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/fakekern/Makefile
 @@ -0,0 +1,19 @@
 +CC=gcc
 +CFLAGS=-c -g -Wall -I ../include
@@ -289,9 +291,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +
 +fuseclient.o: fuseclient.c
 +	$(CC) $(CFLAGS) fuseclient.c
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/config.h.in fuse-2.8.5/include/config.h.in
---- fuse-2.8.5.orig/include/config.h.in	2010-09-28 05:23:52.000000000 -0400
-+++ fuse-2.8.5/include/config.h.in	2014-02-16 22:42:47.242628422 -0500
+Index: fuse-2.8.5/include/config.h.in
+===================================================================
+--- fuse-2.8.5.orig/include/config.h.in
++++ fuse-2.8.5/include/config.h.in
 @@ -16,71 +16,74 @@
  #undef HAVE_INTTYPES_H
  
@@ -369,9 +372,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  
  /* Version number of package */
  #undef VERSION
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/fuse_lowlevel_compat.h fuse-2.8.5/include/fuse_lowlevel_compat.h
---- fuse-2.8.5.orig/include/fuse_lowlevel_compat.h	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/include/fuse_lowlevel_compat.h	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/include/fuse_lowlevel_compat.h
+===================================================================
+--- fuse-2.8.5.orig/include/fuse_lowlevel_compat.h
++++ fuse-2.8.5/include/fuse_lowlevel_compat.h
 @@ -1,31 +1,33 @@
  /*
    FUSE: Filesystem in Userspace
@@ -406,7 +410,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  			 const char *name);
  	void (*rename) (fuse_req_t req, fuse_ino_t parent, const char *name,
  			fuse_ino_t newparent, const char *newname);
-@@ -50,46 +52,48 @@
+@@ -50,46 +52,48 @@ struct fuse_lowlevel_ops_compat25 {
  	void (*releasedir) (fuse_req_t req, fuse_ino_t ino,
  			    struct fuse_file_info *fi);
  	void (*fsyncdir) (fuse_req_t req, fuse_ino_t ino, int datasync,
@@ -456,7 +460,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	void (*unlink) (fuse_req_t req, fuse_ino_t parent, const char *name);
  	void (*rmdir) (fuse_req_t req, fuse_ino_t parent, const char *name);
  	void (*symlink) (fuse_req_t req, const char *link, fuse_ino_t parent,
-@@ -122,34 +126,42 @@
+@@ -122,34 +126,42 @@ struct fuse_lowlevel_ops_compat {
  	void (*setxattr) (fuse_req_t req, fuse_ino_t ino, const char *name,
  			  const char *value, size_t size, int flags);
  	void (*getxattr) (fuse_req_t req, fuse_ino_t ino, const char *name,
@@ -500,9 +504,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +#else
  struct fuse_chan *fuse_kern_chan_new(int fd);
 +#endif
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/fuse_lowlevel.h fuse-2.8.5/include/fuse_lowlevel.h
---- fuse-2.8.5.orig/include/fuse_lowlevel.h	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/include/fuse_lowlevel.h	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/include/fuse_lowlevel.h
+===================================================================
+--- fuse-2.8.5.orig/include/fuse_lowlevel.h
++++ fuse-2.8.5/include/fuse_lowlevel.h
 @@ -15,40 +15,44 @@
   *
   * IMPORTANT: you should define FUSE_USE_VERSION before including this
@@ -548,7 +553,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  /**
   * Session
   *
-@@ -1463,50 +1467,60 @@
+@@ -1463,50 +1467,60 @@ struct fuse_chan_ops {
  	int (*send)(struct fuse_chan *ch, const struct iovec iov[],
  		    size_t count);
  
@@ -611,9 +616,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  /**
   * Query the session to which this channel is assigned
   *
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/fusent_proto.h fuse-2.8.5/include/fusent_proto.h
---- fuse-2.8.5.orig/include/fusent_proto.h	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/include/fusent_proto.h	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/include/fusent_proto.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/include/fusent_proto.h
 @@ -0,0 +1,144 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
@@ -759,9 +765,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +
 +#endif /* NTPROTO_H */
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/fusent_routines.h fuse-2.8.5/include/fusent_routines.h
---- fuse-2.8.5.orig/include/fusent_routines.h	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/include/fusent_routines.h	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/include/fusent_routines.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/include/fusent_routines.h
 @@ -0,0 +1,44 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
@@ -807,9 +814,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +
 +#endif /* IRPDECODE_H */
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/fusent_translate.h fuse-2.8.5/include/fusent_translate.h
---- fuse-2.8.5.orig/include/fusent_translate.h	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/include/fusent_translate.h	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/include/fusent_translate.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/include/fusent_translate.h
 @@ -0,0 +1,23 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
@@ -834,9 +842,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +
 +#endif /* FUSENT_TRANSLATE_H */
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/include/st.h fuse-2.8.5/include/st.h
---- fuse-2.8.5.orig/include/st.h	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/include/st.h	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/include/st.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/include/st.h
 @@ -0,0 +1,122 @@
 +/* This is a public domain general purpose hash table package written by Peter Moore @ UCB. */
 +
@@ -960,9 +969,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +#endif
 +
 +#endif /* ST_H */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/control.c fuse-2.8.5/kernel/control.c
---- fuse-2.8.5.orig/kernel/control.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/control.c	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/kernel/control.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/control.c
 @@ -0,0 +1,359 @@
 +/*
 +  FUSE: Filesystem in Userspace
@@ -1323,9 +1333,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +{
 +	unregister_filesystem(&fuse_ctl_fs_type);
 +}
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/cuse.c fuse-2.8.5/kernel/cuse.c
---- fuse-2.8.5.orig/kernel/cuse.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/cuse.c	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/kernel/cuse.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/cuse.c
 @@ -0,0 +1,620 @@
 +/*
 + * CUSE: Character device in Userspace
@@ -1947,9 +1958,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +MODULE_AUTHOR("Tejun Heo <tj@kernel.org>");
 +MODULE_DESCRIPTION("Character device in Userspace");
 +MODULE_LICENSE("GPL");
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/dev.c fuse-2.8.5/kernel/dev.c
---- fuse-2.8.5.orig/kernel/dev.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/dev.c	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/kernel/dev.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/dev.c
 @@ -0,0 +1,2036 @@
 +/*
 +  FUSE: Filesystem in Userspace
@@ -3987,9 +3999,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +	misc_deregister(&fuse_miscdevice);
 +	kmem_cache_destroy(fuse_req_cachep);
 +}
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/dir.c fuse-2.8.5/kernel/dir.c
---- fuse-2.8.5.orig/kernel/dir.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/dir.c	2013-04-04 02:50:39.178945456 -0400
+Index: fuse-2.8.5/kernel/dir.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/dir.c
 @@ -0,0 +1,1636 @@
 +/*
 +  FUSE: Filesystem in Userspace
@@ -5627,9 +5640,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +{
 +	inode->i_op = &fuse_symlink_inode_operations;
 +}
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/file.c fuse-2.8.5/kernel/file.c
---- fuse-2.8.5.orig/kernel/file.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/file.c	2013-04-04 02:50:39.178945456 -0400
+Index: fuse-2.8.5/kernel/file.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/file.c
 @@ -0,0 +1,2186 @@
 +/*
 +  FUSE: Filesystem in Userspace
@@ -7817,9 +7831,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +	inode->i_fop = &fuse_file_operations;
 +	inode->i_data.a_ops = &fuse_file_aops;
 +}
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/fuse_i.h fuse-2.8.5/kernel/fuse_i.h
---- fuse-2.8.5.orig/kernel/fuse_i.h	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/fuse_i.h	2013-04-04 02:50:39.178945456 -0400
+Index: fuse-2.8.5/kernel/fuse_i.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/fuse_i.h
 @@ -0,0 +1,766 @@
 +/*
 +  FUSE: Filesystem in Userspace
@@ -8587,9 +8602,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +void fuse_write_update_size(struct inode *inode, loff_t pos);
 +
 +#endif /* _FS_FUSE_I_H */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/inode.c fuse-2.8.5/kernel/inode.c
---- fuse-2.8.5.orig/kernel/inode.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/inode.c	2013-04-04 02:50:39.178945456 -0400
+Index: fuse-2.8.5/kernel/inode.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/inode.c
 @@ -0,0 +1,1246 @@
 +/*
 +  FUSE: Filesystem in Userspace
@@ -9837,9 +9853,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +
 +module_init(fuse_init);
 +module_exit(fuse_exit);
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/Kconfig fuse-2.8.5/kernel/Kconfig
---- fuse-2.8.5.orig/kernel/Kconfig	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/Kconfig	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/kernel/Kconfig
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/Kconfig
 @@ -0,0 +1,15 @@
 +config FUSE_FS
 +	tristate "FUSE (Filesystem in Userspace) support"
@@ -9856,9 +9873,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +
 +	  If you want to develop a userspace FS, or if you want to use
 +	  a filesystem based on FUSE, answer Y or M.
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/kernel/Makefile fuse-2.8.5/kernel/Makefile
---- fuse-2.8.5.orig/kernel/Makefile	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/kernel/Makefile	2013-04-04 02:50:39.177945468 -0400
+Index: fuse-2.8.5/kernel/Makefile
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/kernel/Makefile
 @@ -0,0 +1,8 @@
 +#
 +# Makefile for the FUSE filesystem.
@@ -9868,9 +9886,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +obj-$(CONFIG_CUSE) += cuse.o
 +
 +fuse-objs := dev.o dir.o file.o inode.o control.o
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/cuse_lowlevel.c fuse-2.8.5/lib/cuse_lowlevel.c
---- fuse-2.8.5.orig/lib/cuse_lowlevel.c	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/lib/cuse_lowlevel.c	2013-04-04 02:50:39.178945456 -0400
+Index: fuse-2.8.5/lib/cuse_lowlevel.c
+===================================================================
+--- fuse-2.8.5.orig/lib/cuse_lowlevel.c
++++ fuse-2.8.5/lib/cuse_lowlevel.c
 @@ -1,29 +1,31 @@
  /*
    CUSE: Character device in Userspace
@@ -9903,7 +9922,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	unsigned			dev_minor;
  	unsigned			flags;
  	unsigned			dev_info_len;
-@@ -352,20 +354,22 @@
+@@ -352,20 +354,22 @@ int cuse_lowlevel_main(int argc, char *a
  	struct fuse_session *se;
  	int multithreaded;
  	int res;
@@ -9926,9 +9945,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  }
 +
 +#endif
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse.c fuse-2.8.5/lib/fuse.c
---- fuse-2.8.5.orig/lib/fuse.c	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/lib/fuse.c	2013-04-04 02:50:39.178945456 -0400
+Index: fuse-2.8.5/lib/fuse.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse.c
++++ fuse-2.8.5/lib/fuse.c
 @@ -16,40 +16,41 @@
  #include "fuse_misc.h"
  #include "fuse_common_compat.h"
@@ -9971,7 +9991,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	int hard_remove;
  	int use_ino;
  	int readdir_ino;
-@@ -3855,66 +3856,68 @@
+@@ -3855,66 +3856,68 @@ void fuse_destroy(struct fuse *f)
  		}
  	}
  	for (i = 0; i < f->id_table_size; i++) {
@@ -10041,7 +10061,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	fuse_opt_free_args(&args);
  
  	return f;
-@@ -3937,31 +3940,35 @@
+@@ -3937,31 +3940,35 @@ struct fuse *fuse_new_compat2(int fd, co
  }
  
  struct fuse *fuse_new_compat1(int fd, int flags,
@@ -10078,9 +10098,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  FUSE_SYMVER(".symver fuse_new_compat25,fuse_new@FUSE_2.5");
 +
 +#endif /* !__CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse_fs_defines.h fuse-2.8.5/lib/fuse_fs_defines.h
---- fuse-2.8.5.orig/lib/fuse_fs_defines.h	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/lib/fuse_fs_defines.h	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fuse_fs_defines.h
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/lib/fuse_fs_defines.h
 @@ -0,0 +1,14 @@
 +#define MS_RDONLY        1      /* Mount read-only */
 +#define MS_NOSUID        2      /* Ignore suid and sgid bits */
@@ -10096,9 +10117,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +#define MS_MOVE         8192
 +#define MS_REC          16384
 +#define MS_VERBOSE      32768
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse_i.h fuse-2.8.5/lib/fuse_i.h
---- fuse-2.8.5.orig/lib/fuse_i.h	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/lib/fuse_i.h	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fuse_i.h
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_i.h
++++ fuse-2.8.5/lib/fuse_i.h
 @@ -1,100 +1,128 @@
  /*
    FUSE: Filesystem in Userspace
@@ -10228,9 +10250,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  			       int compat);
  
  void cuse_lowlevel_init(fuse_req_t req, fuse_ino_t nodeide, const void *inarg);
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse_kern_chan.c fuse-2.8.5/lib/fuse_kern_chan.c
---- fuse-2.8.5.orig/lib/fuse_kern_chan.c	2010-06-23 09:04:14.000000000 -0400
-+++ fuse-2.8.5/lib/fuse_kern_chan.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fuse_kern_chan.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_kern_chan.c
++++ fuse-2.8.5/lib/fuse_kern_chan.c
 @@ -1,95 +1,213 @@
  /*
    FUSE: Filesystem in Userspace
@@ -10449,9 +10472,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	bufsize = bufsize < MIN_BUFSIZE ? MIN_BUFSIZE : bufsize;
  	return fuse_chan_new(&op, fd, bufsize, NULL);
  }
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse_lowlevel.c fuse-2.8.5/lib/fuse_lowlevel.c
---- fuse-2.8.5.orig/lib/fuse_lowlevel.c	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/lib/fuse_lowlevel.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fuse_lowlevel.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_lowlevel.c
++++ fuse-2.8.5/lib/fuse_lowlevel.c
 @@ -1,84 +1,286 @@
  /*
    FUSE: Filesystem in Userspace
@@ -10740,7 +10764,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	struct fuse_req *prev = req->prev;
  	struct fuse_req *next = req->next;
  	prev->next = next;
-@@ -110,106 +312,133 @@
+@@ -110,106 +312,133 @@ void fuse_free_req(fuse_req_t req)
  	req->u.ni.data = NULL;
  	list_del_req(req);
  	ctr = --req->ctr;
@@ -10875,7 +10899,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	return buf + entsize;
  }
  
-@@ -233,40 +462,46 @@
+@@ -233,40 +462,46 @@ static void convert_statfs(const struct
  	kstatfs->blocks	 = stbuf->f_blocks;
  	kstatfs->bfree	 = stbuf->f_bfree;
  	kstatfs->bavail	 = stbuf->f_bavail;
@@ -10922,7 +10946,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	if (f < 0.0)
  		return 0;
  	else if (f >= 0.999999999)
-@@ -742,40 +977,44 @@
+@@ -742,40 +977,44 @@ static void do_read(fuse_req_t req, fuse
  
  static void do_write(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
  {
@@ -10967,7 +10991,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  		fi.lock_owner = arg->lock_owner;
  
  	if (req->f->op.flush)
-@@ -1039,61 +1278,64 @@
+@@ -1039,61 +1278,64 @@ static int find_interrupted(struct fuse_
  static void do_interrupt(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
  {
  	struct fuse_interrupt_in *arg = (struct fuse_interrupt_in *) inarg;
@@ -11032,7 +11056,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  
  	memset(&fi, 0, sizeof(fi));
  	fi.fh = arg->fh;
-@@ -1419,62 +1661,1269 @@
+@@ -1419,62 +1661,1269 @@ static struct {
  	[FUSE_SETXATTR]	   = { do_setxattr,    "SETXATTR"    },
  	[FUSE_GETXATTR]	   = { do_getxattr,    "GETXATTR"    },
  	[FUSE_LISTXATTR]   = { do_listxattr,   "LISTXATTR"   },
@@ -12304,7 +12328,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	req->ctx.pid = in->pid;
  	req->ch = ch;
  	req->ctr = 1;
-@@ -1500,40 +2949,41 @@
+@@ -1500,40 +2949,41 @@ static void fuse_ll_process(void *data,
  		goto reply_err;
  
  	err = ENOSYS;
@@ -12346,7 +12370,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	FUSE_OPT_KEY("max_read=", FUSE_OPT_KEY_DISCARD),
  	FUSE_OPT_KEY("-h", KEY_HELP),
  	FUSE_OPT_KEY("--help", KEY_HELP),
-@@ -1595,41 +3045,45 @@
+@@ -1595,41 +3045,45 @@ static void fuse_ll_destroy(void *data)
  			f->op.destroy(f->userdata);
  	}
  
@@ -12392,7 +12416,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	f->atomic_o_trunc = 0;
  	list_init_req(&f->list);
  	list_init_req(&f->interrupts);
-@@ -1648,41 +3102,41 @@
+@@ -1648,41 +3102,41 @@ struct fuse_session *fuse_lowlevel_new_c
  	se = fuse_session_new(&sop, f);
  	if (!se)
  		goto out_free;
@@ -12435,7 +12459,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	ret = -EIO;
  	fd = open(path, O_RDONLY);
  	if (fd == -1)
-@@ -1717,41 +3171,41 @@
+@@ -1717,41 +3171,41 @@ retry:
  		s = end;
  		if (ret < size)
  			list[ret] = val;
@@ -12478,7 +12502,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	buf->f_bavail	= compatbuf->f_bavail;
  	buf->f_files	= compatbuf->f_files;
  	buf->f_ffree	= compatbuf->f_ffree;
-@@ -1819,43 +3273,47 @@
+@@ -1819,43 +3273,47 @@ int fuse_sync_compat_args(struct fuse_ar
  	if (fuse_opt_parse(args, &conf, fuse_ll_opts_compat, NULL) == -1)
  		return -1;
  
@@ -12528,9 +12552,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  FUSE_SYMVER(".symver fuse_lowlevel_new_compat25,fuse_lowlevel_new@FUSE_2.5");
 +
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse_misc.h fuse-2.8.5/lib/fuse_misc.h
---- fuse-2.8.5.orig/lib/fuse_misc.h	2010-06-23 09:04:14.000000000 -0400
-+++ fuse-2.8.5/lib/fuse_misc.h	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fuse_misc.h
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_misc.h
++++ fuse-2.8.5/lib/fuse_misc.h
 @@ -1,36 +1,36 @@
  /*
    FUSE: Filesystem in Userspace
@@ -12572,9 +12597,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  /* Linux */
  #define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atim.tv_nsec)
  #define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctim.tv_nsec)
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fusent_proto.c fuse-2.8.5/lib/fusent_proto.c
---- fuse-2.8.5.orig/lib/fusent_proto.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/lib/fusent_proto.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fusent_proto.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/lib/fusent_proto.c
 @@ -0,0 +1,30 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
@@ -12606,9 +12632,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +}
 +
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fusent_routines.c fuse-2.8.5/lib/fusent_routines.c
---- fuse-2.8.5.orig/lib/fusent_routines.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/lib/fusent_routines.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fusent_routines.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/lib/fusent_routines.c
 @@ -0,0 +1,63 @@
 +/*
 +  FUSE-NT: Filesystem in Userspace (for Windows NT)
@@ -12673,9 +12700,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 +}
 +
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/fuse_session.c fuse-2.8.5/lib/fuse_session.c
---- fuse-2.8.5.orig/lib/fuse_session.c	2010-06-23 09:04:14.000000000 -0400
-+++ fuse-2.8.5/lib/fuse_session.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/fuse_session.c
+===================================================================
+--- fuse-2.8.5.orig/lib/fuse_session.c
++++ fuse-2.8.5/lib/fuse_session.c
 @@ -5,41 +5,45 @@
    This program can be distributed under the terms of the GNU LGPLv2.
    See the file COPYING.LIB
@@ -12722,7 +12750,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	se->op = *op;
  	se->data = data;
  
-@@ -99,100 +103,118 @@
+@@ -99,100 +103,118 @@ void fuse_session_exit(struct fuse_sessi
  void fuse_session_reset(struct fuse_session *se)
  {
  	if (se->op.exit)
@@ -12842,9 +12870,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  {
  	fuse_session_remove_chan(ch);
  	if (ch->op.destroy)
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/helper.c fuse-2.8.5/lib/helper.c
---- fuse-2.8.5.orig/lib/helper.c	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/lib/helper.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/helper.c
+===================================================================
+--- fuse-2.8.5.orig/lib/helper.c
++++ fuse-2.8.5/lib/helper.c
 @@ -1,57 +1,62 @@
  /*
    FUSE: Filesystem in Userspace
@@ -12908,7 +12937,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	FUSE_OPT_KEY("fsname=",		FUSE_OPT_KEY_KEEP),
  	FUSE_OPT_KEY("subtype=",	FUSE_OPT_KEY_KEEP),
  	FUSE_OPT_END
-@@ -89,46 +94,53 @@
+@@ -89,46 +94,53 @@ static int fuse_helper_opt_proc(void *da
  				struct fuse_args *outargs)
  {
  	struct helper_opts *hopts = data;
@@ -12962,7 +12991,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  		basename = progname;
  	else if (basename[1] != '\0')
  		basename++;
-@@ -178,113 +190,139 @@
+@@ -178,113 +190,139 @@ err:
  }
  
  int fuse_daemonize(int foreground)
@@ -13102,7 +13131,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  }
  
  struct fuse *fuse_setup(int argc, char *argv[],
-@@ -302,76 +340,86 @@
+@@ -302,76 +340,86 @@ static void fuse_teardown_common(struct
  	fuse_remove_signal_handlers(se);
  	fuse_unmount_common(mountpoint, ch);
  	fuse_destroy(fuse);
@@ -13189,7 +13218,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  				int *fd)
  {
  	return fuse_setup_common(argc, argv, (struct fuse_operations *) op,
-@@ -434,20 +482,22 @@
+@@ -434,20 +482,22 @@ int fuse_main_real_compat25(int argc, ch
  {
  	return fuse_main_common(argc, argv, (struct fuse_operations *) op,
  				op_size, NULL, 25);
@@ -13212,10 +13241,11 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  FUSE_SYMVER(".symver fuse_mount_compat25,fuse_mount@FUSE_2.5");
 +
 +#endif /* __CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/Makefile.am fuse-2.8.5/lib/Makefile.am
---- fuse-2.8.5.orig/lib/Makefile.am	2010-09-28 05:23:33.000000000 -0400
-+++ fuse-2.8.5/lib/Makefile.am	2013-04-04 02:50:39.178945456 -0400
-@@ -16,29 +16,32 @@
+Index: fuse-2.8.5/lib/Makefile.am
+===================================================================
+--- fuse-2.8.5.orig/lib/Makefile.am
++++ fuse-2.8.5/lib/Makefile.am
+@@ -16,29 +16,32 @@ iconv_source = modules/iconv.c
  else
  iconv_source =
  endif
@@ -13249,9 +13279,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  libulockmgr_la_LDFLAGS = -pthread -version-number 1:0:1
  
  EXTRA_DIST = fuse_versionscript
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/mount.c fuse-2.8.5/lib/mount.c
---- fuse-2.8.5.orig/lib/mount.c	2010-09-28 04:04:13.000000000 -0400
-+++ fuse-2.8.5/lib/mount.c	2013-04-04 02:50:39.179945444 -0400
+Index: fuse-2.8.5/lib/mount.c
+===================================================================
+--- fuse-2.8.5.orig/lib/mount.c
++++ fuse-2.8.5/lib/mount.c
 @@ -1,35 +1,42 @@
  /*
    FUSE: Filesystem in Userspace
@@ -13295,7 +13326,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  #endif
  
  #ifndef MS_DIRSYNC
-@@ -46,40 +53,44 @@
+@@ -46,40 +53,44 @@ enum {
  	KEY_RO,
  	KEY_HELP,
  	KEY_VERSION,
@@ -13340,7 +13371,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	FUSE_OPT_KEY("default_permissions",	KEY_KERN_OPT),
  	FUSE_OPT_KEY("max_read=",		KEY_KERN_OPT),
  	FUSE_OPT_KEY("max_read=",		FUSE_OPT_KEY_KEEP),
-@@ -248,91 +259,101 @@
+@@ -248,91 +259,101 @@ static int receive_fd(int fd)
  
  	while(((rv = recvmsg(fd, &msg, 0)) == -1) && errno == EINTR);
  	if (rv == -1) {
@@ -13446,7 +13477,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	}
  
  	pid = fork();
-@@ -368,43 +389,46 @@
+@@ -368,43 +389,46 @@ static int fuse_mount_fusermount(const c
  		snprintf(env, sizeof(env), "%i", fds[0]);
  		setenv(FUSE_COMMFD_ENV, env, 1);
  		exec_fusermount(argv);
@@ -13493,7 +13524,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  		return -1;
  	}
  
-@@ -435,160 +459,240 @@
+@@ -435,160 +459,240 @@ static int fuse_mount_sys(const char *mn
  	source = malloc((mo->fsname ? strlen(mo->fsname) : 0) +
  			(mo->subtype ? strlen(mo->subtype) : 0) +
  			strlen(devname) + 32);
@@ -13743,9 +13774,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
 -
 -FUSE_SYMVER(".symver fuse_mount_compat22,fuse_mount@FUSE_2.2");
 -FUSE_SYMVER(".symver fuse_unmount_compat22,fuse_unmount@FUSE_2.2");
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/mount_util.c fuse-2.8.5/lib/mount_util.c
---- fuse-2.8.5.orig/lib/mount_util.c	2010-09-28 04:03:09.000000000 -0400
-+++ fuse-2.8.5/lib/mount_util.c	2013-04-04 02:50:39.180945432 -0400
+Index: fuse-2.8.5/lib/mount_util.c
+===================================================================
+--- fuse-2.8.5.orig/lib/mount_util.c
++++ fuse-2.8.5/lib/mount_util.c
 @@ -4,40 +4,41 @@
  
    This program can be distributed under the terms of the GNU LGPLv2.
@@ -13788,7 +13820,7 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	res = lstat(_PATH_MOUNTED, &stbuf);
  	if (res == -1) {
  		if (errno == ENOENT)
-@@ -342,20 +343,21 @@
+@@ -342,20 +343,21 @@ int fuse_mnt_check_empty(const char *pro
  	}
  	return 0;
  }
@@ -13810,9 +13842,10 @@ diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=acloc
  	return 0;
  }
 +#endif /* !__CYGWIN__ */
-diff -w -rN -U20 '--exclude=configure' '--exclude=configure.in' '--exclude=aclocal.m4' '--exclude=Makefile.in' '--exclude=*.sln' '--exclude=*.vcxproj*' fuse-2.8.5.orig/lib/st.c fuse-2.8.5/lib/st.c
---- fuse-2.8.5.orig/lib/st.c	1969-12-31 19:00:00.000000000 -0500
-+++ fuse-2.8.5/lib/st.c	2013-04-04 02:50:39.180945432 -0400
+Index: fuse-2.8.5/lib/st.c
+===================================================================
+--- /dev/null
++++ fuse-2.8.5/lib/st.c
 @@ -0,0 +1,1316 @@
 +/* This is a public domain general purpose hash table package written by Peter Moore @ UCB. */
 +
